@@ -50,6 +50,7 @@
     .icon-btn { width: 50px; height: 50px; border-radius: 50%; background: rgba(10, 10, 10, 0.6); border: 1px solid rgba(0, 243, 255, 0.3); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; color: white; backdrop-filter: blur(5px); }
     .icon-btn:hover { border-color: var(--primary); box-shadow: 0 0 10px var(--primary); }
     .icon-btn.active { background: var(--primary); color: black; border-color: var(--primary); box-shadow: 0 0 15px var(--primary); }
+    .icon-btn.disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; } /* Added disabled state */
     .icon-btn.danger { background: #ff4757; border-color: #ff4757; }
 
     .peer-video { position: absolute; bottom: 80px; right: 20px; width: 150px; height: 100px; background: #000; border: 1px solid var(--secondary); border-radius: 8px; overflow: hidden; z-index: 40; }
@@ -237,7 +238,7 @@
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             console.warn("Media devices not available");
-            return;
+            throw new Error("Media API not available");
         }
         // Try Video + Audio
         myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -254,13 +255,15 @@
           console.log("Audio only failed:", e2.message);
           // Fallback 2: No media
           myStream = null;
+          setupStream(false, false); // FIX: Update UI to show no devices
+          console.log("No media devices found. Continuing as Observer.");
         }
       }
     }
 
     async function handleCreate() {
       myName = document.getElementById('usernameInput').value || 'Host';
-      await getMedia(); // Wait for media before creating room
+      await getMedia(); 
       socket.emit('create-room', { name: myName });
     }
 
@@ -268,16 +271,21 @@
       const roomId = document.getElementById('roomCodeInput').value;
       if(!roomId) return;
       myName = document.getElementById('usernameInput').value || 'Guest';
-      await getMedia(); // Wait for media before joining room
+      await getMedia(); 
       socket.emit('join-room', { roomId: roomId, name: myName });
     }
     
     function setupStream(hasVideo, micOn) {
         isMicOn = micOn;
-        if(myStream) myStream.getAudioTracks()[0].enabled = micOn;
-        if(hasVideo && myStream) {
-            isCamOn = false;
-            myStream.getVideoTracks()[0].enabled = false; 
+        
+        if(myStream) {
+            if(myStream.getAudioTracks().length > 0) {
+                myStream.getAudioTracks()[0].enabled = micOn;
+            }
+            if(hasVideo && myStream.getVideoTracks().length > 0) {
+                isCamOn = false;
+                myStream.getVideoTracks()[0].enabled = false; 
+            }
         }
         updateMicUI();
         updateCamUI();
@@ -403,6 +411,12 @@
       document.getElementById('micOn').classList.toggle('hidden', !isMicOn);
       document.getElementById('micOff').classList.toggle('hidden', isMicOn);
       document.getElementById('micBtn').classList.toggle('active', isMicOn);
+      
+      // If no stream, visually disable the button (optional, or just let it toggle to OFF)
+      if(!myStream || !myStream.getAudioTracks().length) {
+        document.getElementById('micBtn').classList.add('disabled');
+        document.getElementById('micBtn').title = "No Microphone";
+      }
     }
 
     function updateCamUI() {
@@ -411,6 +425,11 @@
       document.getElementById('camOn').classList.toggle('hidden', !isCamOn);
       document.getElementById('camOff').classList.toggle('hidden', isCamOn);
       document.getElementById('camBtn').classList.toggle('active', isCamOn);
+
+      if(!myStream || tracks.length === 0) {
+        document.getElementById('camBtn').classList.add('disabled');
+        document.getElementById('camBtn').title = "No Camera";
+      }
     }
 
     function toggleMic() {
