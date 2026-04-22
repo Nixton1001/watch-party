@@ -3,17 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WatchParty Backend</title>
+  <title>WatchParty</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/socket.io/socket.io.js"></script>
   <style>
     body { font-family: 'Segoe UI', sans-serif; background: #0f0f11; color: white; overflow: hidden; }
     .glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
-    /* Hide scrollbars but allow scrolling */
     .chat-scroll::-webkit-scrollbar { width: 4px; }
     .chat-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
-    
-    /* Video JS Styles */
     video { background: black; }
     .control-icon { transition: all 0.2s; }
     .control-icon:hover { transform: scale(1.1); background: rgba(255,255,255,0.1); }
@@ -64,15 +61,10 @@
         Your browser does not support the video tag.
       </video>
       
-      <!-- Overlay Controls (Host Only Logic handled in JS) -->
+      <!-- Overlay Controls -->
       <div id="videoControlsOverlay" class="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/50 to-transparent opacity-0 hover:opacity-100 transition flex justify-between items-start">
         <div>
            <span class="bg-black/50 px-2 py-1 rounded text-sm">Room: <span id="displayRoomCode" class="font-mono text-teal-400"></span></span>
-        </div>
-        <div class="flex gap-2">
-           <button onclick="toggleTheaterMode()" class="bg-black/50 p-2 rounded hover:bg-white/20">
-             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-           </button>
         </div>
       </div>
     </div>
@@ -80,8 +72,9 @@
     <!-- Right Side: Vertical Control Bar & Chat -->
     <div id="sidebar" class="w-80 h-full glass flex flex-col border-l border-white/10 relative transition-all duration-300">
       
-      <!-- Top: Video Source Controls (Host) -->
-      <div class="p-4 border-b border-white/10 space-y-3">
+      <!-- Top: Video Source Controls (Will be hidden after load) -->
+      <div id="sourceControls" class="p-4 border-b border-white/10 space-y-3">
+        <h3 class="text-xs text-gray-400 uppercase tracking-wider">Video Source (Host Only)</h3>
         <div class="flex gap-2">
           <input type="text" id="videoLinkInput" placeholder="Paste Video Link" 
                  class="flex-1 bg-black/30 text-sm p-2 rounded border border-white/10 focus:outline-none">
@@ -91,13 +84,15 @@
         <!-- Upload Button -->
         <label class="block w-full text-center bg-white/5 hover:bg-white/10 p-2 rounded cursor-pointer text-sm text-gray-300">
           <input type="file" id="videoUpload" accept="video/*" onchange="uploadVideo(this)" class="hidden">
-          Upload Video File
+          <span id="uploadLabel">Upload Video File</span>
         </label>
       </div>
 
       <!-- Middle: Chat -->
       <div id="chatBox" class="flex-1 overflow-y-auto chat-scroll p-4 space-y-2">
-        <!-- Messages injected here -->
+        <div class="text-center text-gray-500 text-sm py-10">
+          Welcome! Start chatting below.
+        </div>
       </div>
       
       <!-- Chat Input -->
@@ -122,18 +117,18 @@
 
         <!-- Toggle Mic -->
         <button onclick="toggleMic()" id="micBtn" class="control-icon p-2 rounded-full" title="Microphone">
-          <svg id="micOn" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
-          <svg id="micOff" class="w-6 h-6 hidden text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+          <svg id="micOn" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
+          <svg id="micOff" class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
         </button>
 
         <!-- Toggle Cam -->
         <button onclick="toggleCam()" id="camBtn" class="control-icon p-2 rounded-full" title="Camera">
-          <svg id="camOn" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-          <svg id="camOff" class="w-6 h-6 hidden text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+          <svg id="camOn" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          <svg id="camOff" class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
         </button>
 
-        <!-- More Options -->
-        <button onclick="toggleRightSidebar()" class="control-icon p-2 rounded-full" title="Participants/Settings">
+        <!-- More Options (Toggle Source Controls) -->
+        <button onclick="toggleSourceControls()" class="control-icon p-2 rounded-full" title="Video Source">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/></svg>
         </button>
 
@@ -143,10 +138,8 @@
         </button>
       </div>
       
-      <!-- Hidden/Minimized Video Feeds for Callers -->
-      <div id="videoFeeds" class="absolute bottom-20 right-2 flex flex-col gap-1">
-         <!-- Remote videos injected here via JS -->
-      </div>
+      <!-- Hidden Video Feeds for Callers -->
+      <div id="videoFeeds" class="absolute bottom-20 right-2 flex flex-col gap-1"></div>
     </div>
   </div>
 
@@ -157,9 +150,9 @@
     let myName = '';
     let myRoom = '';
     let isHost = false;
-    let isMicOn = false;
-    let isCamOn = false;
-    const peers = {}; // WebRTC Peer Connections
+    let isMicOn = false; // Default off for privacy
+    let isCamOn = false; // Default off for privacy
+    const peers = {}; 
     const video = document.getElementById('mainVideo');
 
     // --- UI Logic ---
@@ -191,6 +184,7 @@
       showWatchRoom(data.roomId);
       if(data.videoSrc) {
         video.src = data.videoSrc;
+        hideSourceControls(); // Hide if video already playing
       }
     });
 
@@ -200,19 +194,35 @@
       document.getElementById('entryPage').classList.add('hidden');
       document.getElementById('watchRoom').classList.remove('hidden');
       document.getElementById('displayRoomCode').innerText = roomId;
-      startMedia(); // Start Camera/Mic
+      startMedia();
     }
 
     function leaveRoom() {
       window.location.reload();
     }
 
-    // --- Video Source Management (Host Driven) ---
+    // --- Video Source Management ---
+    
+    // Toggle visibility of the source box
+    function toggleSourceControls() {
+      const el = document.getElementById('sourceControls');
+      el.classList.toggle('hidden');
+    }
+
+    function hideSourceControls() {
+      document.getElementById('sourceControls').classList.add('hidden');
+    }
+
     function loadLink() {
       if(!isHost) return alert('Only host can change video');
       const src = document.getElementById('videoLinkInput').value;
+      if(!src) return;
+      
       video.src = src;
       socket.emit('change-src', { src: src });
+      
+      // Hide controls after successful load
+      hideSourceControls();
     }
 
     function uploadVideo(input) {
@@ -221,37 +231,49 @@
         const formData = new FormData();
         formData.append('video', input.files[0]);
 
+        const label = document.getElementById('uploadLabel');
+        label.innerText = "Uploading...";
+
         fetch('/upload', { method: 'POST', body: formData })
           .then(res => res.json())
           .then(data => {
             video.src = data.filePath;
             socket.emit('change-src', { src: data.filePath });
+            
+            // Hide controls after successful load
+            hideSourceControls();
           })
-          .catch(err => console.error(err));
+          .catch(err => {
+              console.error(err);
+              label.innerText = "Error! Click to retry";
+          });
       }
     }
 
     socket.on('update-src', (data) => {
       video.src = data.src;
+      hideSourceControls(); // Also hide for guests
     });
 
     // --- Video Sync ---
     let ignoreNextSeek = false;
+    
+    // Only Host syncs
     video.addEventListener('play', () => {
-      socket.emit('sync-video', { type: 'play', time: video.currentTime });
+      if(isHost) socket.emit('sync-video', { type: 'play', time: video.currentTime });
     });
     video.addEventListener('pause', () => {
-      socket.emit('sync-video', { type: 'pause', time: video.currentTime });
+      if(isHost) socket.emit('sync-video', { type: 'pause', time: video.currentTime });
     });
     video.addEventListener('seeked', () => {
       if(ignoreNextSeek) { ignoreNextSeek = false; return; }
-      socket.emit('sync-video', { type: 'seek', time: video.currentTime });
+      if(isHost) socket.emit('sync-video', { type: 'seek', time: video.currentTime });
     });
 
     socket.on('sync-video', (data) => {
       ignoreNextSeek = true;
-      if(data.type === 'play') { video.play(); }
-      if(data.type === 'pause') { video.pause(); }
+      if(data.type === 'play') video.play();
+      if(data.type === 'pause') video.pause();
       video.currentTime = data.time;
     });
 
@@ -271,13 +293,15 @@
       document.getElementById('chatBox').scrollTop = 10000;
     });
 
-    // --- WebRTC Call System ---
+    // --- Media & WebRTC ---
     async function startMedia() {
       try {
         myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        // We don't show our own video in the main grid for space, but logic is here
+        // Set initial state to OFF
+        myStream.getAudioTracks()[0].enabled = false;
+        myStream.getVideoTracks()[0].enabled = false;
       } catch(e) {
-        console.log("Media permission denied");
+        console.log("Media permission denied or not available");
       }
     }
 
@@ -286,6 +310,7 @@
       const track = myStream.getAudioTracks()[0];
       if(track) track.enabled = !track.enabled;
       isMicOn = !isMicOn;
+      
       document.getElementById('micOn').classList.toggle('hidden', !isMicOn);
       document.getElementById('micOff').classList.toggle('hidden', isMicOn);
       document.getElementById('micBtn').classList.toggle('active', isMicOn);
@@ -296,6 +321,7 @@
       const track = myStream.getVideoTracks()[0];
       if(track) track.enabled = !track.enabled;
       isCamOn = !isCamOn;
+
       document.getElementById('camOn').classList.toggle('hidden', !isCamOn);
       document.getElementById('camOff').classList.toggle('hidden', isCamOn);
       document.getElementById('camBtn').classList.toggle('active', isCamOn);
@@ -308,23 +334,11 @@
     }
 
     // --- WebRTC Signaling (Simplified) ---
-    // Note: A full WebRTC implementation with Socket.io requires ~100 lines of code for Offer/Answer/ICE Candidate handling.
-    // This is a simplified placeholder logic connecting to the server events.
-    
     socket.on('user-joined', async (user) => {
-      console.log("User joined:", user.id);
-      // Logic to create WebRTC Offer would go here
-      // For brevity, this code focuses on the UI and Video Sync.
-      // You would use 'peers[user.id] = new RTCPeerConnection...' here.
-      
       const div = document.createElement('div');
       div.className = 'p-2 text-xs bg-black/50 rounded';
       div.innerText = `${user.name} joined`;
       document.getElementById('chatBox').appendChild(div);
-    });
-
-    socket.on('signal', (data) => {
-      // Logic to handle WebRTC Signal (Answer/ICE) would go here
     });
 
   </script>
