@@ -9,12 +9,11 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Auto-create uploads folder if it doesn't exist
+// Auto-create uploads folder
 if (!fs.existsSync('uploads')) {
     fs.mkdirSync('uploads');
 }
 
-// --- Storage Setup ---
 const storage = multer.diskStorage({
   destination: './uploads/',
   filename: (req, file, cb) => {
@@ -23,17 +22,15 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// --- Static Files ---
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
-// --- Upload Route ---
 app.post('/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
   res.json({ filePath: `/uploads/${req.file.filename}` });
 });
 
-// --- Socket.io Logic ---
+// --- SOCKET LOGIC ---
 const rooms = {};
 
 io.on('connection', (socket) => {
@@ -54,7 +51,12 @@ io.on('connection', (socket) => {
     const room = rooms[data.roomId];
     if (!room) return socket.emit('error', 'Room not found');
     
+    // Notify Host that someone joined (for WebRTC)
+    socket.to(room.host).emit('user-joined', { id: socket.id, name: data.name });
+    
+    // Notify everyone else
     socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
+    
     room.users.push({ id: socket.id, name: data.name });
     socket.join(data.roomId);
     
@@ -65,17 +67,39 @@ io.on('connection', (socket) => {
     });
   });
 
+  // --- WebRTC Signaling ---
+  socket.on('signal', (data) => {
+    // Just forward the signal to the target user
+    io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
+  });
+
+  // --- Video Sync ---
   socket.on('change-src', (data) => {
-    const room = Object.values(rooms).find(r => r.host === socket.id);
-    if (room) {
-      room.videoSrc = data.src;
-      socket.broadcast.to(Object.keys(socket.rooms)[1]).emit('update-src', { src: data.src });
+    const roomId = Object.keys(socket.rooms)[1];
+    if (rooms[roomId]) {
+      rooms[roomId].videoSrc = data.src;
+      socket.broadcast.to(roomId).emit('update-src', { src: data.src });
     }
   });
 
   socket.on('sync-video', (data) => {
     const roomId = Object.keys(socket.rooms)[1];
-    socket.to(roomId).emit('sync-video', data);
+    socket.broadcast.to(roomId).emit('sync-video', data);
+  });
+
+  // Request State (for new joiners to get current time)
+  socket.on('request-state', (data) => {
+    const roomId = Object.keys(socket.rooms)[1];
+    // Ask the host to send the current time
+    if (rooms[roomId]) {
+      socket.to(rooms[roomId].host).emit('get-state', { requester: socket.id });
+    }
+  });
+
+  // Host sends state back
+  socket.on('send-state', (data) => {
+    io.to(data.to).emit('sync-video', { type: 'seek', time: data.time });
+    if(data.playing) io.to(data.to).emit('sync-video', { type: 'play' });
   });
 
   socket.on('chat-message', (data) => {
@@ -83,13 +107,9 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('chat-message', data);
   });
 
-  // WebRTC Signaling
-  socket.on('signal', (data) => {
-    io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
-  });
-
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
+    // Clean up rooms logic omitted for brevity
   });
 });
 
@@ -97,7 +117,6 @@ function generateRoomId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
-// Start Server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
