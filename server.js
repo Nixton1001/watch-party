@@ -39,19 +39,21 @@ io.on('connection', (socket) => {
       users: [{ id: socket.id, name: data.name }]
     };
     socket.join(roomId);
+    socket.roomId = roomId; // Store roomId in socket
     socket.emit('room-created', { roomId, isHost: true });
   });
 
   socket.on('set-welcome', (data) => {
-    const roomId = Object.keys(socket.rooms)[1];
-    if (rooms[roomId] && rooms[roomId].host === socket.id) {
-      rooms[roomId].welcomeMsg = data.msg;
+    if (socket.roomId && rooms[socket.roomId] && rooms[socket.roomId].host === socket.id) {
+      rooms[socket.roomId].welcomeMsg = data.msg;
     }
   });
 
   socket.on('join-room', (data) => {
     const room = rooms[data.roomId];
     if (!room) return socket.emit('error', 'Room not found');
+    
+    socket.roomId = data.roomId; // Store roomId in socket
     
     socket.to(room.host).emit('user-joined', { id: socket.id, name: data.name });
     socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
@@ -70,21 +72,20 @@ io.on('connection', (socket) => {
   socket.on('signal', (data) => io.to(data.to).emit('signal', { from: socket.id, signal: data.signal }));
 
   socket.on('change-src', (data) => {
-    const roomId = Object.keys(socket.rooms)[1];
-    if (rooms[roomId]) {
-      rooms[roomId].videoSrc = data.src;
-      socket.broadcast.to(roomId).emit('update-src', { src: data.src });
+    if (socket.roomId && rooms[socket.roomId]) {
+      rooms[socket.roomId].videoSrc = data.src;
+      socket.broadcast.to(socket.roomId).emit('update-src', { src: data.src });
     }
   });
 
   socket.on('sync-video', (data) => {
-    const roomId = Object.keys(socket.rooms)[1];
-    socket.broadcast.to(roomId).emit('sync-video', data);
+    if(socket.roomId) socket.broadcast.to(socket.roomId).emit('sync-video', data);
   });
 
   socket.on('request-state', () => {
-    const roomId = Object.keys(socket.rooms)[1];
-    if (rooms[roomId]) socket.to(rooms[roomId].host).emit('get-state', { requester: socket.id });
+    if (socket.roomId && rooms[socket.roomId]) {
+      socket.to(rooms[socket.roomId].host).emit('get-state', { requester: socket.id });
+    }
   });
 
   socket.on('send-state', (data) => {
@@ -93,8 +94,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('chat-message', (data) => {
-    const roomId = Object.keys(socket.rooms)[1];
-    io.to(roomId).emit('chat-message', data);
+    if(socket.roomId) io.to(socket.roomId).emit('chat-message', data);
   });
 
   socket.on('disconnect', () => console.log('User disconnected:', socket.id));
