@@ -10,7 +10,6 @@
     body { font-family: 'Segoe UI', sans-serif; background: #0f0f11; color: white; overflow: hidden; }
     .glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
     
-    /* Animations */
     @keyframes fadeOut { 0% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
     @keyframes slideUp { 0% { opacity: 0; transform: translateY(50px); } 100% { opacity: 1; transform: translateY(0); } }
     @keyframes heartBeat { 0% { transform: scale(1); } 25% { transform: scale(1.1); } 40% { transform: scale(1); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
@@ -22,11 +21,6 @@
 
     #join-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; flex-direction: column; }
     .join-text { font-size: 3rem; font-weight: bold; text-align: center; padding: 20px; animation: slideUp 0.5s ease; }
-
-    /* Permission Modal */
-    #permModal { position: fixed; inset: 0; z-index: 20000; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; padding: 20px; }
-    .perm-content { background: #1a1a1a; padding: 30px; border-radius: 15px; max-width: 400px; text-align: center; border: 1px solid #333; }
-    .perm-icon { width: 60px; height: 60px; background: #ff4757; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 30px; }
 
     /* Mobile Play Overlay */
     #mobilePlayOverlay { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; flex-direction: column; cursor: pointer; }
@@ -81,18 +75,6 @@
     <div class="splash-sub">Made with <span class="splash-heart">❤</span> by Nikhil (Nixton)</div>
   </div>
 
-  <!-- PERMISSION MODAL -->
-  <div id="permModal">
-    <div class="perm-content">
-      <div class="perm-icon">❌</div>
-      <h2 class="text-xl font-bold mb-2">Permission Required</h2>
-      <p class="text-gray-400 mb-4 text-sm">To use the Call feature, you must allow Camera and Microphone access.</p>
-      <p class="text-white mb-4 text-xs bg-black/30 p-2 rounded">Click the <span class="text-teal-400">Lock/Camera Icon</span> in your browser address bar -> Select <span class="text-teal-400">Allow</span> -> Click Retry.</p>
-      <button onclick="retryPermissions()" class="w-full bg-teal-500 text-black font-bold py-3 rounded-lg mb-2">Retry Permission</button>
-      <button onclick="skipPermissions()" class="w-full bg-white/10 text-white font-bold py-3 rounded-lg text-sm">Continue without Video Call</button>
-    </div>
-  </div>
-
   <!-- JOIN OVERLAY -->
   <div id="join-overlay">
     <div class="join-text" id="join-message-text"></div>
@@ -108,12 +90,12 @@
       <div class="space-y-4">
         <input type="text" id="usernameInput" placeholder="Enter your name" class="w-full bg-black/30 border border-white/10 rounded-lg p-3 focus:outline-none focus:border-teal-400">
         <div class="flex gap-2">
-          <button onclick="handleCreate()" class="flex-1 bg-teal-500 hover:bg-teal-600 text-black font-bold py-3 rounded-lg">Create Room</button>
-          <button onclick="showJoinInput()" class="flex-1 bg-white/10 hover:bg-white/20 font-bold py-3 rounded-lg">Join Room</button>
+          <button id="createBtn" onclick="handleCreate()" class="flex-1 bg-teal-500 hover:bg-teal-600 text-black font-bold py-3 rounded-lg transition">Create Room</button>
+          <button onclick="showJoinInput()" class="flex-1 bg-white/10 hover:bg-white/20 font-bold py-3 rounded-lg transition">Join Room</button>
         </div>
         <div id="joinContainer" class="hidden space-y-2">
           <input type="text" id="roomCodeInput" placeholder="Enter Code" class="w-full bg-black/30 border border-white/10 rounded-lg p-3 uppercase tracking-widest focus:outline-none focus:border-teal-400">
-          <button onclick="handleJoin()" class="w-full bg-teal-500/20 hover:bg-teal-500/40 text-teal-400 font-bold py-3 rounded-lg">Connect</button>
+          <button id="joinBtn" onclick="handleJoin()" class="w-full bg-teal-500/20 hover:bg-teal-500/40 text-teal-400 font-bold py-3 rounded-lg transition">Connect</button>
         </div>
       </div>
     </div>
@@ -126,7 +108,9 @@
     <div class="flex-1 flex flex-col bg-black relative video-wrapper">
       <video id="mainVideo" class="w-full h-full" playsinline></video>
       
-      <div id="mobilePlayOverlay" onclick="forcePlay()"><button class="px-6 py-3 bg-teal-500 rounded-lg font-bold">Tap to Play</button></div>
+      <div id="mobilePlayOverlay" onclick="forcePlay()">
+        <button class="px-6 py-3 bg-teal-500 text-black font-bold rounded-lg">Tap to Play Video</button>
+      </div>
 
       <div class="video-controls flex items-center justify-between">
         <div class="flex items-center gap-2">
@@ -184,13 +168,13 @@
       </button>
       
       <!-- MIC BUTTON -->
-      <button id="micBtn" class="icon-btn" title="Mic">
+      <button id="micBtn" class="icon-btn" title="Mic (Click to Toggle)">
         <svg id="micOn" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
         <svg id="micOff" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
       </button>
 
       <!-- CAM BUTTON -->
-      <button id="camBtn" class="icon-btn" title="Camera">
+      <button onclick="toggleCam()" id="camBtn" class="icon-btn" title="Camera">
         <svg id="camOn" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
         <svg id="camOff" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
       </button>
@@ -208,12 +192,16 @@
     const sidebar = document.getElementById('sidebar');
     const verticalBar = document.getElementById('verticalBar');
     
-    let myStream, myName, isHost = false, isMicOn = false, isCamOn = false;
-    let isChatOpen = true; 
-    const peers = {}, users = {};
-    let pendingAction = null; // 'create' or 'join'
+    let myStream = null;
+    let myName = '';
+    let isHost = false;
+    let isMicOn = false;
+    let isCamOn = false;
+    let isChatOpen = true;
+    const peers = {};
+    const users = {};
 
-    // --- 1. INIT & PERMISSION MANAGEMENT ---
+    // --- 1. INIT ---
     window.onload = () => setTimeout(() => document.getElementById('entryPage').style.display = 'flex', 3000);
 
     function addChatMessage(name, msg, color = 'white') {
@@ -233,67 +221,67 @@
 
     function showJoinInput() { document.getElementById('joinContainer').classList.toggle('hidden'); }
 
-    // PERMISSION FLOW
-    async function handleCreate() {
-        pendingAction = 'create';
-        await requestPermissions();
-    }
+    // --- 2. PERMISSION & ROOM LOGIC ---
 
-    async function handleJoin() {
-        pendingAction = 'join';
-        await requestPermissions();
-    }
+    // This function runs immediately when you click Create or Join
+    async function requestMediaPermissions() {
+        // 1. Visual Feedback
+        const btn = isHost ? document.getElementById('createBtn') : document.getElementById('joinBtn');
+        const originalText = btn.innerText;
+        btn.innerText = "Requesting Permissions...";
+        btn.disabled = true;
 
-    async function requestPermissions() {
         try {
+            // 2. Request Access
             // This triggers the browser prompt
             myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             
-            // Success: Default OFF
+            // 3. Success: Default OFF (Privacy)
             myStream.getAudioTracks()[0].enabled = false;
             myStream.getVideoTracks()[0].enabled = false;
             
-            document.getElementById('permModal').style.display = 'none';
-            proceedWithAction(); 
+            btn.innerText = originalText;
+            btn.disabled = false;
+            return true;
+
         } catch (err) {
             console.error(err);
-            // Show custom modal
-            document.getElementById('permModal').style.display = 'flex';
+            // 4. Handle Denial
+            btn.innerText = originalText;
+            btn.disabled = false;
+
+            if(err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                alert("Permission Denied!\n\nYou clicked 'Block' or have previously denied access.\n\nTo fix:\n1. Click the Lock/Camera icon in the address bar.\n2. Select 'Allow'.\n3. Refresh the page.");
+            } else if(err.name === 'NotFoundError') {
+                alert("No Camera/Mic found. You can continue without video.");
+            } else {
+                alert("Could not start media. Ensure you are on HTTPS or Localhost.");
+            }
+            return false;
         }
     }
 
-    function retryPermissions() {
-        // Usually browsers require a page reload or user gesture to re-prompt if denied permanently
-        // But we can try again
-        requestPermissions();
+    async function handleCreate() {
+        const granted = await requestMediaPermissions();
+        // Even if not granted, we allow creation (user might just want to watch)
+        createRoomLogic();
     }
 
-    function skipPermissions() {
-        document.getElementById('permModal').style.display = 'none';
-        myStream = null; // No stream
-        proceedWithAction();
+    function createRoomLogic() {
+        myName = document.getElementById('usernameInput').value || 'Host';
+        socket.emit('create-room', { name: myName });
     }
 
-    function proceedWithAction() {
-        if (pendingAction === 'create') {
-            createRoom();
-        } else if (pendingAction === 'join') {
-            joinRoom();
-        }
-        pendingAction = null;
+    async function handleJoin() {
+        const granted = await requestMediaPermissions();
+        joinRoomLogic();
     }
-
-    // --- 2. ROOM LOGIC ---
-    function createRoom() {
-      myName = document.getElementById('usernameInput').value || 'Host';
-      socket.emit('create-room', { name: myName });
-    }
-
-    function joinRoom() {
-      myName = document.getElementById('usernameInput').value || 'Guest';
-      const roomId = document.getElementById('roomCodeInput').value;
-      if(!roomId) return alert('Enter code');
-      socket.emit('join-room', { roomId: roomId, name: myName });
+    
+    function joinRoomLogic() {
+        myName = document.getElementById('usernameInput').value || 'Guest';
+        const roomId = document.getElementById('roomCodeInput').value;
+        if(!roomId) return alert('Enter code');
+        socket.emit('join-room', { roomId: roomId, name: myName });
     }
     
     socket.on('room-created', (data) => { isHost = true; initRoom(data.roomId); });
@@ -303,6 +291,7 @@
       initRoom(data.roomId); 
       
       if(data.welcomeMsg) showJoinOverlay(data.welcomeMsg);
+      
       if(data.videoSrc && data.videoSrc.length > 0) {
         video.src = data.videoSrc;
         document.getElementById('guestWaiting').classList.add('hidden');
@@ -421,7 +410,10 @@
     function setupMicLogic() {
         const btn = document.getElementById('micBtn');
         btn.addEventListener('click', () => {
-            if(!myStream) return alert("Camera/Mic permissions were not granted. Refresh to try again.");
+            if(!myStream) {
+                alert("Microphone access was not granted. Please refresh and allow permission to use the mic.");
+                return;
+            }
             
             const track = myStream.getAudioTracks()[0];
             track.enabled = !track.enabled;
@@ -431,6 +423,7 @@
             document.getElementById('micOff').classList.toggle('hidden', isMicOn);
             document.getElementById('micBtn').classList.toggle('active', isMicOn);
             
+            // Update all peer connections
             Object.values(peers).forEach(pc => {
                 const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
                 if(sender) sender.replaceTrack(track);
@@ -439,7 +432,10 @@
     }
 
     function toggleCam() { 
-      if(!myStream) return alert("Camera/Mic permissions were not granted. Refresh to try again.");
+      if(!myStream) {
+          alert("Camera access was not granted. Please refresh and allow permission.");
+          return;
+      }
       const track = myStream.getVideoTracks()[0];
       track.enabled = !track.enabled;
       isCamOn = track.enabled;
