@@ -9,28 +9,22 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Ensure uploads directory exists
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
-// Configure Multer for video uploads
 const storage = multer.diskStorage({
   destination: './uploads/',
   filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
 const upload = multer({ storage: storage });
 
-// Serve static files from 'public' folder
 app.use(express.static('public'));
-// Serve uploaded videos
 app.use('/uploads', express.static('uploads'));
 
-// Handle video file upload
 app.post('/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
   res.json({ filePath: `/uploads/${req.file.filename}` });
 });
 
-// In-memory room storage
 const rooms = {};
 
 io.on('connection', (socket) => {
@@ -61,8 +55,8 @@ io.on('connection', (socket) => {
     
     socket.roomId = data.roomId;
     
-    // Notify host and others
-    socket.to(room.host).emit('user-joined', { id: socket.id, name: data.name });
+    // --- FIX: Removed duplicate emit ---
+    // We only need to broadcast to the room. The host is in the room.
     socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
     
     room.users.push({ id: socket.id, name: data.name });
@@ -77,6 +71,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('signal', (data) => {
+    // Relay signal to specific peer
     io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
   });
 
@@ -106,10 +101,7 @@ io.on('connection', (socket) => {
     if(socket.roomId) io.to(socket.roomId).emit('chat-message', data);
   });
 
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-    // Optional: Clean up rooms if host leaves
-  });
+  socket.on('disconnect', () => console.log('User disconnected:', socket.id));
 });
 
 function generateRoomId() { 
