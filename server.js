@@ -1,376 +1,110 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Watch-Night</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="/socket.io/socket.io.js"></script>
-  <style>
-    body { font-family: 'Segoe UI', sans-serif; background: #0f0f11; color: white; overflow: hidden; }
-    .glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
-    
-    /* --- ANIMATIONS --- */
-    @keyframes fadeOut { 0% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
-    @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
-    @keyframes slideUp { 0% { opacity: 0; transform: translateY(50px); } 100% { opacity: 1; transform: translateY(0); } }
-    @keyframes heartBeat { 0% { transform: scale(1); } 25% { transform: scale(1.1); } 40% { transform: scale(1); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
+const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const http = require('http');
+const { Server } = require('socket.io');
 
-    /* 1. SPLASH SCREEN */
-    #splash-screen {
-      position: fixed; inset: 0; z-index: 9999; background: #0f0f11;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      animation: fadeOut 1s ease 3s forwards; /* Fade out after 3 seconds */
-    }
-    .splash-title { font-size: 4rem; font-weight: 800; text-align: center; animation: slideUp 1s ease; background: linear-gradient(to right, #00d4aa, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .splash-sub { margin-top: 1rem; font-size: 1.5rem; color: rgba(255,255,255,0.8); animation: slideUp 1.2s ease; display: flex; align-items: center; gap: 10px; }
-    .splash-heart { color: #ff4757; animation: heartBeat 1.5s ease infinite; }
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
-    /* 2. JOIN OVERLAY (Custom Message) */
-    #join-overlay {
-      position: fixed; inset: 0; z-index: 9998; background: rgba(0,0,0,0.9);
-      display: none; align-items: center; justify-content: center; flex-direction: column;
-    }
-    .join-text { font-size: 3rem; font-weight: bold; text-align: center; padding: 20px; animation: slideUp 0.5s ease; }
+if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
-    /* Chat Fixes */
-    .chat-scroll::-webkit-scrollbar { width: 4px; }
-    .chat-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
-    .chat-message { word-wrap: break-word; word-break: break-word; }
+const storage = multer.diskStorage({
+  destination: './uploads/',
+  filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
+});
+const upload = multer({ storage: storage });
 
-    /* Video & Controls */
-    video { background: black; }
-    .video-controls { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 20px 10px 10px; opacity: 0; transition: opacity 0.3s; }
-    .video-wrapper:hover .video-controls { opacity: 1; }
-    .control-btn { background: rgba(255,255,255,0.1); border: none; color: white; cursor: pointer; transition: all 0.2s; border-radius: 8px; }
-    .control-btn:hover { background: rgba(255,255,255,0.2); }
-    
-    .icon-btn { width: 50px; height: 50px; border-radius: 50%; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; color: white; }
-    .icon-btn:hover { background: rgba(255,255,255,0.1); transform: scale(1.1); }
-    .icon-btn.active { background: #00d4aa; color: black; border-color: #00d4aa; }
-    .icon-btn.danger { background: #ff4757; border-color: #ff4757; }
+app.use(express.static('public'));
+app.use('/uploads', express.static('uploads'));
 
-    .vertical-bar { position: absolute; right: 330px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 50; transition: right 0.3s ease; }
-    .vertical-bar.sidebar-hidden { right: 10px; }
+app.post('/upload', upload.single('video'), (req, res) => {
+  if (!req.file) return res.status(400).send('No file uploaded.');
+  res.json({ filePath: `/uploads/${req.file.filename}` });
+});
 
-    .peer-video { position: absolute; bottom: 80px; right: 20px; width: 150px; height: 100px; background: #000; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; overflow: hidden; z-index: 40; }
-    .peer-video video { width: 100%; height: 100%; object-fit: cover; }
-    .peer-name { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); font-size: 10px; padding: 2px 5px; }
-  </style>
-</head>
-<body>
+const rooms = {};
 
-  <!-- 1. SPLASH SCREEN (Shows on Site Load) -->
-  <div id="splash-screen">
-    <div class="splash-title">Welcome to<br>Watch-Night</div>
-    <div class="splash-sub">
-      Made with <span class="splash-heart">❤</span> by Nikhil (Nixton)
-    </div>
-  </div>
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
 
-  <!-- 2. JOIN OVERLAY (Shows when Guest Joins) -->
-  <div id="join-overlay">
-    <div class="join-text" id="join-message-text"></div>
-    <div class="mt-4 text-gray-400 animate-pulse">Loading experience...</div>
-  </div>
-
-  <!-- PAGE 1: LOBBY -->
-  <div id="entryPage" class="h-screen w-screen flex items-center justify-center" style="display: none;">
-    <!-- Initially hidden so splash shows first -->
-    <div class="glass p-8 rounded-2xl w-full max-w-md space-y-6">
-      <div class="text-center">
-        <h1 class="text-3xl font-bold mb-2">Watch Party</h1>
-        <p class="text-gray-400">Video call and watch together.</p>
-      </div>
-      <div class="space-y-4">
-        <input type="text" id="usernameInput" placeholder="Enter your name" class="w-full bg-black/30 border border-white/10 rounded-lg p-3 focus:outline-none focus:border-teal-400">
-        <div class="flex gap-2">
-          <button onclick="createRoom()" class="flex-1 bg-teal-500 hover:bg-teal-600 text-black font-bold py-3 rounded-lg">Create Room</button>
-          <button onclick="showJoinModal()" class="flex-1 bg-white/10 hover:bg-white/20 font-bold py-3 rounded-lg">Join Room</button>
-        </div>
-        <div id="joinContainer" class="hidden space-y-2">
-          <input type="text" id="roomCodeInput" placeholder="Enter Code" class="w-full bg-black/30 border border-white/10 rounded-lg p-3 uppercase tracking-widest focus:outline-none focus:border-teal-400">
-          <button onclick="joinRoom()" class="w-full bg-teal-500/20 hover:bg-teal-500/40 text-teal-400 font-bold py-3 rounded-lg">Connect</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PAGE 2: WATCH ROOM -->
-  <div id="watchRoom" class="hidden h-screen w-screen flex relative">
-    
-    <!-- Video Player -->
-    <div class="flex-1 flex flex-col bg-black relative video-wrapper">
-      <video id="mainVideo" class="w-full h-full"></video>
-      
-      <!-- Controls -->
-      <div class="video-controls flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <button id="playPauseBtn" onclick="togglePlayPause()" class="control-btn p-2 rounded-lg">
-            <svg id="playIcon" class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
-            <svg id="pauseIcon" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-          </button>
-          <span id="timeDisplay" class="text-sm font-mono text-gray-300">0:00 / 0:00</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <button onclick="requestSync()" class="control-btn p-2 rounded-lg text-teal-400 hover:bg-teal-400/20">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-          </button>
-          <button onclick="toggleFullscreen()" class="control-btn p-2 rounded-lg">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-          </button>
-        </div>
-      </div>
-      <div class="absolute top-2 left-2 bg-black/50 px-3 py-1 rounded text-xs z-10">Room: <span id="displayRoomCode" class="font-mono text-teal-400"></span></div>
-    </div>
-
-    <!-- Sidebar -->
-    <div id="sidebar" class="w-80 h-full glass flex flex-col border-l border-white/10 transition-all duration-300 z-40">
-      
-      <!-- Source Controls -->
-      <div id="sourceControls" class="p-4 border-b border-white/10 space-y-3">
-        <h3 class="text-xs text-gray-400 uppercase tracking-wider">Host Settings</h3>
-        
-        <!-- Welcome Message Input -->
-        <input type="text" id="welcomeMsgInput" placeholder="Welcome Message for Guests" 
-               class="w-full bg-black/30 text-sm p-2 rounded border border-white/10 focus:outline-none"
-               onchange="updateWelcomeMsg(this.value)">
-        
-        <div class="flex gap-2">
-          <input type="text" id="videoLinkInput" placeholder="Video Link" class="flex-1 bg-black/30 text-sm p-2 rounded border border-white/10 focus:outline-none">
-          <button onclick="loadLink()" class="bg-teal-500/20 text-teal-400 px-3 rounded text-sm hover:bg-teal-500 hover:text-black">Load</button>
-        </div>
-        <label class="block w-full text-center bg-white/5 hover:bg-white/10 p-2 rounded cursor-pointer text-sm text-gray-300">
-          <input type="file" id="videoUpload" accept="video/*" onchange="uploadVideo(this)" class="hidden">
-          <span id="uploadLabel">Upload Video</span>
-        </label>
-      </div>
-
-      <!-- Chat Box -->
-      <div id="chatBox" class="flex-1 overflow-y-auto chat-scroll p-4 space-y-2">
-        <div class="text-center text-gray-500 text-sm py-10">Welcome!</div>
-      </div>
-      
-      <div class="p-4 border-t border-white/10">
-        <div class="flex gap-2">
-          <input type="text" id="chatInput" placeholder="Message..." class="flex-1 bg-black/30 text-sm p-2 rounded-full border border-white/10 focus:outline-none" onkeypress="if(event.key==='Enter')sendMessage()">
-          <button onclick="sendMessage()" class="text-teal-400 hover:text-teal-300 p-2">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Peer Videos -->
-    <div id="peerVideosContainer"></div>
-
-    <!-- Vertical Control Bar -->
-    <div id="verticalBar" class="vertical-bar sidebar-shown">
-      <button onclick="toggleChat()" id="chatToggleBtn" class="icon-btn active" title="Chat">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-      </button>
-      <button onclick="toggleSource()" class="icon-btn" title="Settings">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/></svg>
-      </button>
-      <div class="w-8 h-px bg-white/20 mx-auto"></div>
-      <button onclick="toggleMic()" id="micBtn" class="icon-btn" title="Mic">
-        <svg id="micOn" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
-        <svg id="micOff" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
-      </button>
-      <button onclick="toggleCam()" id="camBtn" class="icon-btn" title="Camera">
-        <svg id="camOn" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-        <svg id="camOff" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-      </button>
-      <div class="w-8 h-px bg-white/20 mx-auto"></div>
-      <button onclick="leaveRoom()" class="icon-btn danger" title="Leave">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z"/></svg>
-      </button>
-    </div>
-  </div>
-
-  <script>
-    // --- Setup ---
-    const socket = io();
-    const video = document.getElementById('mainVideo');
-    const peerVideosContainer = document.getElementById('peerVideosContainer');
-    
-    let myStream, myName, isHost = false, isMicOn = false, isCamOn = false;
-    const peers = {}, users = {};
-
-    // --- 1. SPLASH SCREEN LOGIC ---
-    window.onload = () => {
-      // After 3s (fadeOut duration), show the main lobby
-      setTimeout(() => {
-        document.getElementById('entryPage').style.display = 'flex';
-      }, 3000);
+  socket.on('create-room', (data) => {
+    const roomId = generateRoomId();
+    rooms[roomId] = {
+      host: socket.id,
+      videoSrc: '',
+      welcomeMsg: 'Welcome to the Party!',
+      users: [{ id: socket.id, name: data.name }]
     };
+    socket.join(roomId);
+    socket.emit('room-created', { roomId, isHost: true });
+  });
 
-    // --- 2. WELCOME MESSAGE LOGIC ---
-    function updateWelcomeMsg(msg) {
-      if(isHost) socket.emit('set-welcome', { msg: msg });
+  socket.on('set-welcome', (data) => {
+    const roomId = Object.keys(socket.rooms)[1];
+    if (rooms[roomId] && rooms[roomId].host === socket.id) {
+      rooms[roomId].welcomeMsg = data.msg;
     }
+  });
 
-    function showJoinOverlay(msg) {
-      const overlay = document.getElementById('join-overlay');
-      const textEl = document.getElementById('join-message-text');
-      textEl.innerText = msg || "Welcome!";
-      overlay.style.display = 'flex';
-      
-      // Hide after 3 seconds
-      setTimeout(() => {
-        overlay.style.display = 'none';
-      }, 3000);
-    }
-
-    // --- Lobby Logic ---
-    function showJoinModal() { document.getElementById('joinContainer').classList.toggle('hidden'); }
-    function createRoom() {
-      myName = document.getElementById('usernameInput').value || 'Host';
-      socket.emit('create-room', { name: myName });
-    }
-    function joinRoom() {
-      myName = document.getElementById('usernameInput').value || 'Guest';
-      const roomId = document.getElementById('roomCodeInput').value;
-      if(!roomId) return alert('Enter code');
-      socket.emit('join-room', { roomId: roomId, name: myName });
-    }
+  socket.on('join-room', (data) => {
+    const room = rooms[data.roomId];
+    if (!room) return socket.emit('error', 'Room not found');
     
-    socket.on('room-created', (data) => { isHost = true; initRoom(data.roomId); });
+    socket.to(room.host).emit('user-joined', { id: socket.id, name: data.name });
+    socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
     
-    socket.on('room-joined', (data) => { 
-      initRoom(data.roomId); 
-      if(data.videoSrc) video.src = data.videoSrc;
-      // Show the custom welcome message sent by server
-      if(data.welcomeMsg) showJoinOverlay(data.welcomeMsg);
+    room.users.push({ id: socket.id, name: data.name });
+    socket.join(data.roomId);
+    
+    socket.emit('room-joined', { 
+      roomId: data.roomId, 
+      videoSrc: room.videoSrc,
+      welcomeMsg: room.welcomeMsg,
+      users: room.users 
     });
-    
-    socket.on('error', (msg) => alert(msg));
-    
-    function initRoom(id) {
-      document.getElementById('entryPage').style.display = 'none';
-      document.getElementById('watchRoom').classList.remove('hidden');
-      document.getElementById('displayRoomCode').innerText = id;
-      startMedia();
-    }
-    
-    function leaveRoom() { window.location.reload(); }
+  });
 
-    // --- Video & Chat Logic (Same as before) ---
-    function togglePlayPause() { if(video.paused) video.play(); else video.pause(); }
-    video.onplay = () => { updateIcons(); if(isHost) socket.emit('sync-video', { type: 'play', time: video.currentTime }); };
-    video.onpause = () => { updateIcons(); if(isHost) socket.emit('sync-video', { type: 'pause', time: video.currentTime }); };
-    function updateIcons() { document.getElementById('playIcon').classList.toggle('hidden', !video.paused); document.getElementById('pauseIcon').classList.toggle('hidden', video.paused); }
-    setInterval(() => document.getElementById('timeDisplay').innerText = `${Math.floor(video.currentTime/60)}:${Math.floor(video.currentTime%60)<10?'0':''}${Math.floor(video.currentTime%60)} / ${Math.floor(video.duration/60)}:${Math.floor(video.duration%60)<10?'0':''}${Math.floor(video.duration%60)}`, 1000);
-    function formatTime(s) { return s; }
-    function toggleFullscreen() { const w = document.querySelector('.video-wrapper'); if(!document.fullscreenElement) w.requestFullscreen(); else document.exitFullscreen(); }
-    
-    socket.on('sync-video', (data) => {
-      if(data.type === 'play') video.play();
-      if(data.type === 'pause') video.pause();
-      video.currentTime = data.time;
-    });
-    
-    function requestSync() { socket.emit('request-state'); }
-    socket.on('get-state', (data) => socket.emit('send-state', { to: data.requester, time: video.currentTime, playing: !video.paused }));
+  socket.on('signal', (data) => io.to(data.to).emit('signal', { from: socket.id, signal: data.signal }));
 
-    function toggleSource() { document.getElementById('sourceControls').classList.toggle('hidden'); }
-    function loadLink() {
-      if(!isHost) return;
-      video.src = document.getElementById('videoLinkInput').value;
-      socket.emit('change-src', { src: video.src });
-      toggleSource();
+  socket.on('change-src', (data) => {
+    const roomId = Object.keys(socket.rooms)[1];
+    if (rooms[roomId]) {
+      rooms[roomId].videoSrc = data.src;
+      socket.broadcast.to(roomId).emit('update-src', { src: data.src });
     }
-    function uploadVideo(input) {
-      if(!isHost) return;
-      const formData = new FormData();
-      formData.append('video', input.files[0]);
-      document.getElementById('uploadLabel').innerText = "Uploading...";
-      fetch('/upload', { method: 'POST', body: formData }).then(r => r.json()).then(data => {
-        video.src = data.filePath;
-        socket.emit('change-src', { src: data.filePath });
-        toggleSource();
-      });
-    }
-    socket.on('update-src', (data) => video.src = data.src);
+  });
 
-    function sendMessage() {
-      const input = document.getElementById('chatInput');
-      if(!input.value.trim()) return;
-      socket.emit('chat-message', { name: myName, msg: input.value });
-      input.value = '';
-    }
-    socket.on('chat-message', (data) => {
-      const div = document.createElement('div');
-      div.className = 'chat-message text-sm p-2 rounded bg-white/5';
-      div.innerHTML = `<span class="font-bold text-teal-400">${data.name}:</span> ${data.msg}`;
-      document.getElementById('chatBox').appendChild(div);
-      document.getElementById('chatBox').scrollTop = 10000;
-    });
+  socket.on('sync-video', (data) => {
+    const roomId = Object.keys(socket.rooms)[1];
+    socket.broadcast.to(roomId).emit('sync-video', data);
+  });
 
-    function toggleChat() {
-      const sidebar = document.getElementById('sidebar');
-      const bar = document.getElementById('verticalBar');
-      sidebar.classList.toggle('hidden');
-      bar.classList.toggle('sidebar-shown');
-      bar.classList.toggle('sidebar-hidden');
+  // Guest asks for state
+  socket.on('request-state', () => {
+    const roomId = Object.keys(socket.rooms)[1];
+    if (rooms[roomId]) {
+      socket.to(rooms[roomId].host).emit('get-state', { requester: socket.id });
     }
+  });
 
-    // --- WebRTC Logic (Same as before) ---
-    async function startMedia() {
-      try {
-        myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        myStream.getAudioTracks()[0].enabled = false;
-        myStream.getVideoTracks()[0].enabled = false;
-      } catch(e) { console.log("No media"); }
-    }
-    function toggleMic() { if(!myStream) return; myStream.getAudioTracks()[0].enabled = !myStream.getAudioTracks()[0].enabled; isMicOn = !isMicOn; document.getElementById('micOn').classList.toggle('hidden', !isMicOn); document.getElementById('micOff').classList.toggle('hidden', isMicOn); document.getElementById('micBtn').classList.toggle('active', isMicOn); }
-    function toggleCam() { if(!myStream) return; myStream.getVideoTracks()[0].enabled = !myStream.getVideoTracks()[0].enabled; isCamOn = !isCamOn; document.getElementById('camOn').classList.toggle('hidden', !isCamOn); document.getElementById('camOff').classList.toggle('hidden', isCamOn); document.getElementById('camBtn').classList.toggle('active', isCamOn); Object.values(peers).forEach(pc => { const sender = pc.getSenders().find(s => s.track.kind === 'video'); if(sender) sender.replaceTrack(myStream.getVideoTracks()[0]); }); }
-    
-    socket.on('user-joined', async (data) => {
-      if(isHost) {
-        const pc = createPeerConnection(data.id);
-        peers[data.id] = pc;
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('signal', { to: data.id, signal: { sdp: offer } });
-      }
-      users[data.id] = data.name;
-      addChatMessage('System', `${data.name} joined`, '#888');
-    });
+  // Host sends state back
+  socket.on('send-state', (data) => {
+    io.to(data.to).emit('sync-video', { type: 'seek', time: data.time });
+    if(data.playing) io.to(data.to).emit('sync-video', { type: 'play' });
+  });
 
-    socket.on('signal', async (data) => {
-      const fromId = data.from;
-      if (!peers[fromId]) { const pc = createPeerConnection(fromId); peers[fromId] = pc; }
-      const pc = peers[fromId];
-      if (data.signal.sdp) {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.signal.sdp));
-        if (pc.remoteDescription.type === 'offer') {
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          socket.emit('signal', { to: fromId, signal: { sdp: answer } });
-        }
-      } else if (data.signal.candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(data.signal.candidate));
-      }
-    });
+  socket.on('chat-message', (data) => {
+    const roomId = Object.keys(socket.rooms)[1];
+    io.to(roomId).emit('chat-message', data);
+  });
 
-    function createPeerConnection(peerId) {
-      const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-      const pc = new RTCPeerConnection(config);
-      if(myStream) myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
-      pc.ontrack = (event) => {
-        let videoEl = document.getElementById(`video-${peerId}`);
-        if (!videoEl) {
-          const div = document.createElement('div'); div.className = 'peer-video'; div.id = `container-${peerId}`;
-          videoEl = document.createElement('video'); videoEl.id = `video-${peerId}`; videoEl.autoplay = true; videoEl.playsInline = true;
-          const nameTag = document.createElement('div'); nameTag.className = 'peer-name'; nameTag.innerText = users[peerId] || 'Guest';
-          div.appendChild(videoEl); div.appendChild(nameTag); peerVideosContainer.appendChild(div);
-        }
-        videoEl.srcObject = event.streams[0];
-      };
-      pc.onicecandidate = (event) => { if (event.candidate) socket.emit('signal', { to: peerId, signal: { candidate: event.candidate } }); };
-      return pc;
-    }
-  </script>
-</body>
-</html>
+  socket.on('disconnect', () => console.log('User disconnected:', socket.id));
+});
+
+function generateRoomId() { return Math.random().toString(36).substring(2, 8).toUpperCase(); }
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
