@@ -17,24 +17,11 @@
     ::-webkit-scrollbar-thumb { background: linear-gradient(var(--primary), var(--secondary)); border-radius: 3px; }
 
     /* --- Animations --- */
-    @keyframes fadeOut { 0% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
     @keyframes slideUp { 0% { opacity: 0; transform: translateY(50px); } 100% { opacity: 1; transform: translateY(0); } }
-    @keyframes zoomIn { 0% { opacity: 0; transform: scale(0.8); } 100% { opacity: 1; transform: scale(1); } }
-    @keyframes heartBeat { 0% { transform: scale(1); } 25% { transform: scale(1.1); } 40% { transform: scale(1); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
     @keyframes pulseGlow { 0% { box-shadow: 0 0 0 0 rgba(0, 243, 255, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(0, 243, 255, 0); } 100% { box-shadow: 0 0 0 0 rgba(0, 243, 255, 0); } }
-    @keyframes gridScroll { 0% { background-position: 0 0; } 100% { background-position: 0 100px; } }
-
-    /* --- Splash Screen --- */
-    #splash-screen { position: fixed; inset: 0; z-index: 9999; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; animation: fadeOut 1s ease 3s forwards; }
-    .splash-bg { position: absolute; inset: 0; background-image: linear-gradient(rgba(0, 243, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 243, 255, 0.03) 1px, transparent 1px); background-size: 50px 50px; animation: gridScroll 4s linear infinite; z-index: 0; }
-    .splash-title { font-family: 'Orbitron', sans-serif; font-size: 5rem; font-weight: 900; text-align: center; animation: zoomIn 1s ease; color: white; z-index: 1; text-shadow: 0 0 20px var(--primary); }
-    .splash-title span { color: var(--primary); }
-    .splash-sub { margin-top: 1rem; font-size: 1.5rem; color: rgba(255,255,255,0.8); animation: slideUp 1.2s ease; display: flex; align-items: center; gap: 10px; z-index: 1; }
-    .splash-heart { color: #ff4757; animation: heartBeat 1.5s ease infinite; }
 
     /* --- Glass & Effects --- */
     .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
-    .neon-border { border: 1px solid rgba(0, 243, 255, 0.3); box-shadow: 0 0 15px rgba(0, 243, 255, 0.1); }
     
     /* --- Buttons --- */
     .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; border: none; }
@@ -84,10 +71,12 @@
     /* Chat Message */
     .chat-message { word-wrap: break-word; word-break: break-word; margin-bottom: 8px; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border-left: 2px solid var(--primary); animation: slideUp 0.3s ease; }
 
+    /* Room Code in Chat */
+    .room-code-big { font-family: 'Orbitron', sans-serif; font-size: 2rem; font-weight: 900; letter-spacing: 6px; color: var(--primary); text-shadow: 0 0 10px var(--primary); cursor: pointer; transition: all 0.3s; }
+    .room-code-big:hover { color: white; text-shadow: 0 0 20px white; }
+
     /* Mobile Responsive */
     @media (max-width: 768px) {
-      .splash-title { font-size: 3rem; }
-      
       #sidebar { position: fixed; right: 0; top: 0; bottom: 0; width: 85%; max-width: 320px; z-index: 70; transform: translateX(100%); display: flex; }
       #sidebar.open { transform: translateX(0); }
       #sidebar.hidden { display: flex; transform: translateX(100%); }
@@ -106,13 +95,6 @@
 </head>
 <body>
 
-  <!-- SPLASH SCREEN -->
-  <div id="splash-screen">
-    <div class="splash-bg"></div>
-    <div class="splash-title">WATCH<span>NIGHT</span></div>
-    <div class="splash-sub">Made with <span class="splash-heart">❤</span> by Nikhil (Nixton)</div>
-  </div>
-
   <!-- JOIN OVERLAY -->
   <div id="join-overlay">
     <div class="join-text" id="join-message-text"></div>
@@ -120,7 +102,7 @@
   </div>
 
   <!-- PAGE 1: LOBBY -->
-  <div id="entryPage" class="h-screen w-screen flex items-center justify-center" style="display: none;">
+  <div id="entryPage" class="h-screen w-screen flex items-center justify-center">
     <div class="glass p-8 rounded-2xl w-full max-w-md space-y-6 border-l-4 border-l-[var(--primary)] relative overflow-hidden">
       <!-- Decorative Corner -->
       <div class="absolute top-0 right-0 w-20 h-20 border-t-2 border-r-2 border-[var(--primary)] opacity-50 rounded-tr-2xl"></div>
@@ -172,7 +154,6 @@
           </button>
         </div>
       </div>
-      <div class="absolute top-2 left-2 bg-black/80 px-3 py-1 rounded text-xs z-10 border border-[var(--primary)] text-[var(--primary)] font-mono">ROOM: <span id="displayRoomCode"></span></div>
     </div>
 
     <!-- Sidebar -->
@@ -190,7 +171,20 @@
         </label>
       </div>
       <div id="guestWaiting" class="hidden p-4 border-b border-white/10 text-center text-gray-400 text-sm">Waiting for Host...</div>
-      <div id="chatBox" class="flex-1 overflow-y-auto chat-scroll p-4 space-y-2"></div>
+      
+      <!-- Chat Box -->
+      <div id="chatBox" class="flex-1 overflow-y-auto chat-scroll p-4 space-y-2 flex flex-col">
+        
+        <!-- BIG ROOM CODE DISPLAY (At Top of Chat) -->
+        <div class="w-full p-4 mb-4 rounded-lg bg-black/40 border border-[var(--primary)]/20 text-center flex flex-col items-center justify-center">
+          <span class="text-xs text-gray-500 uppercase tracking-widest">Room Code</span>
+          <div id="displayRoomCodeChat" class="room-code-big mt-1" onclick="copyCode()">------</div>
+        </div>
+        
+        <!-- Messages will appear here -->
+        <div id="messagesContainer"></div>
+      </div>
+      
       <div class="p-4 border-t border-white/10">
         <div class="flex gap-2">
           <input type="text" id="chatInput" placeholder="Message..." class="flex-1 input-futuristic text-sm p-2 rounded-full" onkeypress="if(event.key==='Enter')sendMessage()">
@@ -236,6 +230,7 @@
     const peerVideosContainer = document.getElementById('peerVideosContainer');
     const sidebar = document.getElementById('sidebar');
     const verticalBar = document.getElementById('verticalBar');
+    const messagesContainer = document.getElementById('messagesContainer');
     
     let myStream, myName, isHost = false, isMicOn = false, isCamOn = false;
     let isChatOpen = true; 
@@ -243,10 +238,9 @@
 
     // --- 1. INIT & SECURITY CHECK ---
     window.onload = () => {
-      setTimeout(() => {
-        document.getElementById('entryPage').style.display = 'flex';
-        checkSecurity();
-      }, 3000);
+      // Show entry page immediately (No splash screen)
+      document.getElementById('entryPage').style.display = 'flex';
+      checkSecurity();
     };
 
     function checkSecurity() {
@@ -258,7 +252,7 @@
       const div = document.createElement('div');
       div.className = 'chat-message text-sm';
       div.innerHTML = `<span class="font-bold" style="color:${color}">${name}:</span> ${msg}`;
-      document.getElementById('chatBox').appendChild(div);
+      messagesContainer.appendChild(div);
       document.getElementById('chatBox').scrollTop = 10000;
     }
 
@@ -267,6 +261,12 @@
       document.getElementById('join-message-text').innerText = msg || "Welcome!";
       overlay.style.display = 'flex';
       setTimeout(() => overlay.style.display = 'none', 3000);
+    }
+
+    function copyCode() {
+        const code = document.getElementById('displayRoomCodeChat').innerText;
+        navigator.clipboard.writeText(code);
+        alert("Room Code Copied: " + code);
     }
 
     function showJoinInput() { document.getElementById('joinContainer').classList.toggle('hidden'); }
@@ -367,9 +367,10 @@
     
     function initRoom(id) {
       document.getElementById('entryPage').style.display = 'none';
-      document.getElementById('splash-screen').style.display = 'none';
       document.getElementById('watchRoom').classList.remove('hidden');
-      document.getElementById('displayRoomCode').innerText = id;
+      
+      // Set the big room code in chat
+      document.getElementById('displayRoomCodeChat').innerText = id;
       
       if (!isHost) document.getElementById('sourceControls').classList.add('hidden');
       else document.getElementById('guestWaiting').classList.add('hidden');
