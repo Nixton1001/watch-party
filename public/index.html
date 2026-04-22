@@ -10,6 +10,7 @@
     body { font-family: 'Segoe UI', sans-serif; background: #0f0f11; color: white; overflow: hidden; }
     .glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
     
+    /* Animations */
     @keyframes fadeOut { 0% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
     @keyframes slideUp { 0% { opacity: 0; transform: translateY(50px); } 100% { opacity: 1; transform: translateY(0); } }
     @keyframes heartBeat { 0% { transform: scale(1); } 25% { transform: scale(1.1); } 40% { transform: scale(1); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
@@ -38,7 +39,7 @@
     .icon-btn.active { background: #00d4aa; color: black; border-color: #00d4aa; }
     .icon-btn.danger { background: #ff4757; border-color: #ff4757; }
 
-    /* --- DESKTOP LAYOUT (Default) --- */
+    /* --- DESKTOP LAYOUT --- */
     #sidebar { width: 320px; display: flex; flex-direction: column; border-left: 1px solid rgba(255,255,255,0.1); transition: all 0.3s; }
     #sidebar.hidden { display: none; } 
     
@@ -49,7 +50,7 @@
     .peer-video video { width: 100%; height: 100%; object-fit: cover; }
     .peer-name { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); font-size: 10px; padding: 2px 5px; color: white; }
 
-    /* --- MOBILE LAYOUT (Max Width 768px) --- */
+    /* --- MOBILE LAYOUT --- */
     @media (max-width: 768px) {
       #sidebar { position: fixed; right: 0; top: 0; bottom: 0; width: 85%; max-width: 320px; z-index: 70; transform: translateX(100%); display: flex; }
       #sidebar.open { transform: translateX(0); }
@@ -89,6 +90,14 @@
       </div>
       <div class="space-y-4">
         <input type="text" id="usernameInput" placeholder="Enter your name" class="w-full bg-black/30 border border-white/10 rounded-lg p-3 focus:outline-none focus:border-teal-400">
+        
+        <!-- WARNING BOX -->
+        <div id="securityWarning" class="hidden bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-xs p-3 rounded-lg">
+          <strong>Security Notice:</strong> You are not using a secure connection (HTTPS). <br>
+          Browsers block Mic/Camera on normal HTTP. <br>
+          Use <code>localhost</code> on PC, or a secure tunnel (like ngrok) for mobile.
+        </div>
+
         <div class="flex gap-2">
           <button id="createBtn" onclick="handleCreate()" class="flex-1 bg-teal-500 hover:bg-teal-600 text-black font-bold py-3 rounded-lg transition">Create Room</button>
           <button onclick="showJoinInput()" class="flex-1 bg-white/10 hover:bg-white/20 font-bold py-3 rounded-lg transition">Join Room</button>
@@ -108,9 +117,7 @@
     <div class="flex-1 flex flex-col bg-black relative video-wrapper">
       <video id="mainVideo" class="w-full h-full" playsinline></video>
       
-      <div id="mobilePlayOverlay" onclick="forcePlay()">
-        <button class="px-6 py-3 bg-teal-500 text-black font-bold rounded-lg">Tap to Play Video</button>
-      </div>
+      <div id="mobilePlayOverlay" onclick="forcePlay()"><button class="px-6 py-3 bg-teal-500 rounded-lg font-bold">Tap to Play Video</button></div>
 
       <div class="video-controls flex items-center justify-between">
         <div class="flex items-center gap-2">
@@ -192,17 +199,26 @@
     const sidebar = document.getElementById('sidebar');
     const verticalBar = document.getElementById('verticalBar');
     
-    let myStream = null;
-    let myName = '';
-    let isHost = false;
-    let isMicOn = false;
-    let isCamOn = false;
-    let isChatOpen = true;
-    const peers = {};
-    const users = {};
+    let myStream, myName, isHost = false, isMicOn = false, isCamOn = false;
+    let isChatOpen = true; 
+    const peers = {}, users = {};
 
-    // --- 1. INIT ---
-    window.onload = () => setTimeout(() => document.getElementById('entryPage').style.display = 'flex', 3000);
+    // --- 1. INIT & SECURITY CHECK ---
+    window.onload = () => {
+      setTimeout(() => {
+        document.getElementById('entryPage').style.display = 'flex';
+        checkSecurity();
+      }, 3000);
+    };
+
+    function checkSecurity() {
+      // Check if we are on HTTPS or localhost
+      const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      
+      if (!isSecure) {
+        document.getElementById('securityWarning').classList.remove('hidden');
+      }
+    }
 
     function addChatMessage(name, msg, color = 'white') {
       const div = document.createElement('div');
@@ -223,65 +239,75 @@
 
     // --- 2. PERMISSION & ROOM LOGIC ---
 
-    // This function runs immediately when you click Create or Join
-    async function requestMediaPermissions() {
-        // 1. Visual Feedback
-        const btn = isHost ? document.getElementById('createBtn') : document.getElementById('joinBtn');
-        const originalText = btn.innerText;
-        btn.innerText = "Requesting Permissions...";
-        btn.disabled = true;
-
-        try {
-            // 2. Request Access
-            // This triggers the browser prompt
-            myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            
-            // 3. Success: Default OFF (Privacy)
-            myStream.getAudioTracks()[0].enabled = false;
-            myStream.getVideoTracks()[0].enabled = false;
-            
-            btn.innerText = originalText;
-            btn.disabled = false;
-            return true;
-
-        } catch (err) {
-            console.error(err);
-            // 4. Handle Denial
-            btn.innerText = originalText;
-            btn.disabled = false;
-
-            if(err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                alert("Permission Denied!\n\nYou clicked 'Block' or have previously denied access.\n\nTo fix:\n1. Click the Lock/Camera icon in the address bar.\n2. Select 'Allow'.\n3. Refresh the page.");
-            } else if(err.name === 'NotFoundError') {
-                alert("No Camera/Mic found. You can continue without video.");
-            } else {
-                alert("Could not start media. Ensure you are on HTTPS or Localhost.");
-            }
-            return false;
-        }
-    }
-
-    async function handleCreate() {
-        const granted = await requestMediaPermissions();
-        // Even if not granted, we allow creation (user might just want to watch)
+    // This function is called DIRECTLY on click to preserve User Gesture
+    async function requestPermissionsAndCreate() {
+      try {
+        // Request immediately on click
+        myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        
+        // Success: Default OFF (Privacy)
+        myStream.getAudioTracks()[0].enabled = false;
+        myStream.getVideoTracks()[0].enabled = false;
+        
+        // Proceed to create room
         createRoomLogic();
+        
+      } catch (err) {
+        handlePermissionError(err);
+      }
     }
+
+    async function requestPermissionsAndJoin() {
+      try {
+        // Request immediately on click
+        myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        
+        // Success: Default OFF
+        myStream.getAudioTracks()[0].enabled = false;
+        myStream.getVideoTracks()[0].enabled = false;
+        
+        // Proceed to join room
+        joinRoomLogic();
+        
+      } catch (err) {
+        handlePermissionError(err);
+      }
+    }
+
+    function handlePermissionError(err) {
+      console.error(err);
+      let msg = "Permission Error.\n\n";
+      if(err.name === 'NotAllowedError') {
+        msg += "You denied permission or it was blocked previously.\n\nPlease click the Lock/Camera icon in the URL bar and set 'Allow'.";
+      } else if (err.name === 'NotFoundError') {
+        msg += "No Camera/Mic found. You will join without video.";
+        // Proceed anyway
+        if(pendingAction === 'create') createRoomLogic();
+        else joinRoomLogic();
+        return;
+      } else if (err.name === 'NotReadableError') {
+        msg += "Camera/Mic is used by another app (Zoom/Teams?). Close other apps and refresh.";
+      } else {
+        msg += "Connection might not be secure. Browsers block media on HTTP (use HTTPS or localhost).";
+      }
+      alert(msg);
+    }
+
+    let pendingAction = null;
+
+    function handleCreate() { pendingAction = 'create'; requestPermissionsAndCreate(); }
+    function handleJoin() { pendingAction = 'join'; requestPermissionsAndJoin(); }
 
     function createRoomLogic() {
-        myName = document.getElementById('usernameInput').value || 'Host';
-        socket.emit('create-room', { name: myName });
+      myName = document.getElementById('usernameInput').value || 'Host';
+      socket.emit('create-room', { name: myName });
     }
 
-    async function handleJoin() {
-        const granted = await requestMediaPermissions();
-        joinRoomLogic();
-    }
-    
     function joinRoomLogic() {
-        myName = document.getElementById('usernameInput').value || 'Guest';
-        const roomId = document.getElementById('roomCodeInput').value;
-        if(!roomId) return alert('Enter code');
-        socket.emit('join-room', { roomId: roomId, name: myName });
+      myName = document.getElementById('usernameInput').value || 'Guest';
+      const roomId = document.getElementById('roomCodeInput').value;
+      if(!roomId) return alert('Enter code');
+      socket.emit('join-room', { roomId: roomId, name: myName });
     }
     
     socket.on('room-created', (data) => { isHost = true; initRoom(data.roomId); });
@@ -289,9 +315,7 @@
     socket.on('room-joined', (data) => { 
       isHost = false; 
       initRoom(data.roomId); 
-      
       if(data.welcomeMsg) showJoinOverlay(data.welcomeMsg);
-      
       if(data.videoSrc && data.videoSrc.length > 0) {
         video.src = data.videoSrc;
         document.getElementById('guestWaiting').classList.add('hidden');
@@ -410,10 +434,7 @@
     function setupMicLogic() {
         const btn = document.getElementById('micBtn');
         btn.addEventListener('click', () => {
-            if(!myStream) {
-                alert("Microphone access was not granted. Please refresh and allow permission to use the mic.");
-                return;
-            }
+            if(!myStream) return alert("Microphone access was not granted. Please refresh and allow permission.");
             
             const track = myStream.getAudioTracks()[0];
             track.enabled = !track.enabled;
@@ -423,7 +444,6 @@
             document.getElementById('micOff').classList.toggle('hidden', isMicOn);
             document.getElementById('micBtn').classList.toggle('active', isMicOn);
             
-            // Update all peer connections
             Object.values(peers).forEach(pc => {
                 const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
                 if(sender) sender.replaceTrack(track);
@@ -432,10 +452,7 @@
     }
 
     function toggleCam() { 
-      if(!myStream) {
-          alert("Camera access was not granted. Please refresh and allow permission.");
-          return;
-      }
+      if(!myStream) return alert("Camera access was not granted. Please refresh and allow permission.");
       const track = myStream.getVideoTracks()[0];
       track.enabled = !track.enabled;
       isCamOn = track.enabled;
