@@ -10,41 +10,34 @@
     body { font-family: 'Segoe UI', sans-serif; background: #0f0f11; color: white; overflow: hidden; }
     .glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
     
-    /* --- ANIMATIONS --- */
+    /* Animations */
     @keyframes fadeOut { 0% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
-    @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
     @keyframes slideUp { 0% { opacity: 0; transform: translateY(50px); } 100% { opacity: 1; transform: translateY(0); } }
     @keyframes heartBeat { 0% { transform: scale(1); } 25% { transform: scale(1.1); } 40% { transform: scale(1); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
 
-    /* 1. SPLASH SCREEN */
-    #splash-screen {
-      position: fixed; inset: 0; z-index: 9999; background: #0f0f11;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      animation: fadeOut 1s ease 3s forwards; /* Fade out after 3 seconds */
-    }
+    /* Splash Screen */
+    #splash-screen { position: fixed; inset: 0; z-index: 9999; background: #0f0f11; display: flex; flex-direction: column; align-items: center; justify-content: center; animation: fadeOut 1s ease 3s forwards; }
     .splash-title { font-size: 4rem; font-weight: 800; text-align: center; animation: slideUp 1s ease; background: linear-gradient(to right, #00d4aa, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     .splash-sub { margin-top: 1rem; font-size: 1.5rem; color: rgba(255,255,255,0.8); animation: slideUp 1.2s ease; display: flex; align-items: center; gap: 10px; }
     .splash-heart { color: #ff4757; animation: heartBeat 1.5s ease infinite; }
 
-    /* 2. JOIN OVERLAY (Custom Message) */
-    #join-overlay {
-      position: fixed; inset: 0; z-index: 9998; background: rgba(0,0,0,0.9);
-      display: none; align-items: center; justify-content: center; flex-direction: column;
-    }
+    /* Join Overlay */
+    #join-overlay { position: fixed; inset: 0; z-index: 9998; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; flex-direction: column; }
     .join-text { font-size: 3rem; font-weight: bold; text-align: center; padding: 20px; animation: slideUp 0.5s ease; }
 
-    /* Chat Fixes */
+    /* Chat */
     .chat-scroll::-webkit-scrollbar { width: 4px; }
     .chat-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
     .chat-message { word-wrap: break-word; word-break: break-word; }
 
-    /* Video & Controls */
+    /* Video */
     video { background: black; }
     .video-controls { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 20px 10px 10px; opacity: 0; transition: opacity 0.3s; }
     .video-wrapper:hover .video-controls { opacity: 1; }
+    
+    /* Buttons */
     .control-btn { background: rgba(255,255,255,0.1); border: none; color: white; cursor: pointer; transition: all 0.2s; border-radius: 8px; }
     .control-btn:hover { background: rgba(255,255,255,0.2); }
-    
     .icon-btn { width: 50px; height: 50px; border-radius: 50%; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; color: white; }
     .icon-btn:hover { background: rgba(255,255,255,0.1); transform: scale(1.1); }
     .icon-btn.active { background: #00d4aa; color: black; border-color: #00d4aa; }
@@ -60,27 +53,23 @@
 </head>
 <body>
 
-  <!-- 1. SPLASH SCREEN (Shows on Site Load) -->
+  <!-- 1. SPLASH SCREEN -->
   <div id="splash-screen">
     <div class="splash-title">Welcome to<br>Watch-Night</div>
-    <div class="splash-sub">
-      Made with <span class="splash-heart">❤</span> by Nikhil (Nixton)
-    </div>
+    <div class="splash-sub">Made with <span class="splash-heart">❤</span> by Nikhil (Nixton)</div>
   </div>
 
-  <!-- 2. JOIN OVERLAY (Shows when Guest Joins) -->
+  <!-- 2. JOIN OVERLAY -->
   <div id="join-overlay">
     <div class="join-text" id="join-message-text"></div>
-    <div class="mt-4 text-gray-400 animate-pulse">Loading experience...</div>
+    <div class="mt-4 text-gray-400 animate-pulse">Loading...</div>
   </div>
 
   <!-- PAGE 1: LOBBY -->
   <div id="entryPage" class="h-screen w-screen flex items-center justify-center" style="display: none;">
-    <!-- Initially hidden so splash shows first -->
     <div class="glass p-8 rounded-2xl w-full max-w-md space-y-6">
       <div class="text-center">
         <h1 class="text-3xl font-bold mb-2">Watch Party</h1>
-        <p class="text-gray-400">Video call and watch together.</p>
       </div>
       <div class="space-y-4">
         <input type="text" id="usernameInput" placeholder="Enter your name" class="w-full bg-black/30 border border-white/10 rounded-lg p-3 focus:outline-none focus:border-teal-400">
@@ -103,7 +92,6 @@
     <div class="flex-1 flex flex-col bg-black relative video-wrapper">
       <video id="mainVideo" class="w-full h-full"></video>
       
-      <!-- Controls -->
       <div class="video-controls flex items-center justify-between">
         <div class="flex items-center gap-2">
           <button id="playPauseBtn" onclick="togglePlayPause()" class="control-btn p-2 rounded-lg">
@@ -127,15 +115,9 @@
     <!-- Sidebar -->
     <div id="sidebar" class="w-80 h-full glass flex flex-col border-l border-white/10 transition-all duration-300 z-40">
       
-      <!-- Source Controls -->
       <div id="sourceControls" class="p-4 border-b border-white/10 space-y-3">
         <h3 class="text-xs text-gray-400 uppercase tracking-wider">Host Settings</h3>
-        
-        <!-- Welcome Message Input -->
-        <input type="text" id="welcomeMsgInput" placeholder="Welcome Message for Guests" 
-               class="w-full bg-black/30 text-sm p-2 rounded border border-white/10 focus:outline-none"
-               onchange="updateWelcomeMsg(this.value)">
-        
+        <input type="text" id="welcomeMsgInput" placeholder="Welcome Message" class="w-full bg-black/30 text-sm p-2 rounded border border-white/10 focus:outline-none" onchange="updateWelcomeMsg(this.value)">
         <div class="flex gap-2">
           <input type="text" id="videoLinkInput" placeholder="Video Link" class="flex-1 bg-black/30 text-sm p-2 rounded border border-white/10 focus:outline-none">
           <button onclick="loadLink()" class="bg-teal-500/20 text-teal-400 px-3 rounded text-sm hover:bg-teal-500 hover:text-black">Load</button>
@@ -146,10 +128,7 @@
         </label>
       </div>
 
-      <!-- Chat Box -->
-      <div id="chatBox" class="flex-1 overflow-y-auto chat-scroll p-4 space-y-2">
-        <div class="text-center text-gray-500 text-sm py-10">Welcome!</div>
-      </div>
+      <div id="chatBox" class="flex-1 overflow-y-auto chat-scroll p-4 space-y-2"></div>
       
       <div class="p-4 border-t border-white/10">
         <div class="flex gap-2">
@@ -161,7 +140,6 @@
       </div>
     </div>
 
-    <!-- Peer Videos -->
     <div id="peerVideosContainer"></div>
 
     <!-- Vertical Control Bar -->
@@ -189,7 +167,6 @@
   </div>
 
   <script>
-    // --- Setup ---
     const socket = io();
     const video = document.getElementById('mainVideo');
     const peerVideosContainer = document.getElementById('peerVideosContainer');
@@ -197,15 +174,22 @@
     let myStream, myName, isHost = false, isMicOn = false, isCamOn = false;
     const peers = {}, users = {};
 
-    // --- 1. SPLASH SCREEN LOGIC ---
+    // --- 1. CORE FUNCTIONS ---
     window.onload = () => {
-      // After 3s (fadeOut duration), show the main lobby
       setTimeout(() => {
         document.getElementById('entryPage').style.display = 'flex';
       }, 3000);
     };
 
-    // --- 2. WELCOME MESSAGE LOGIC ---
+    // FIX: Defined addChatMessage properly
+    function addChatMessage(name, msg, color = 'white') {
+      const div = document.createElement('div');
+      div.className = 'chat-message text-sm p-2 rounded bg-white/5';
+      div.innerHTML = `<span class="font-bold" style="color:${color}">${name}:</span> ${msg}`;
+      document.getElementById('chatBox').appendChild(div);
+      document.getElementById('chatBox').scrollTop = 10000;
+    }
+
     function updateWelcomeMsg(msg) {
       if(isHost) socket.emit('set-welcome', { msg: msg });
     }
@@ -215,14 +199,10 @@
       const textEl = document.getElementById('join-message-text');
       textEl.innerText = msg || "Welcome!";
       overlay.style.display = 'flex';
-      
-      // Hide after 3 seconds
-      setTimeout(() => {
-        overlay.style.display = 'none';
-      }, 3000);
+      setTimeout(() => overlay.style.display = 'none', 3000);
     }
 
-    // --- Lobby Logic ---
+    // --- 2. ROOM LOGIC ---
     function showJoinModal() { document.getElementById('joinContainer').classList.toggle('hidden'); }
     function createRoom() {
       myName = document.getElementById('usernameInput').value || 'Host';
@@ -240,8 +220,10 @@
     socket.on('room-joined', (data) => { 
       initRoom(data.roomId); 
       if(data.videoSrc) video.src = data.videoSrc;
-      // Show the custom welcome message sent by server
       if(data.welcomeMsg) showJoinOverlay(data.welcomeMsg);
+      
+      // FIX: Request video time immediately after joining
+      socket.emit('request-state');
     });
     
     socket.on('error', (msg) => alert(msg));
@@ -255,24 +237,32 @@
     
     function leaveRoom() { window.location.reload(); }
 
-    // --- Video & Chat Logic (Same as before) ---
+    // --- 3. VIDEO LOGIC ---
     function togglePlayPause() { if(video.paused) video.play(); else video.pause(); }
     video.onplay = () => { updateIcons(); if(isHost) socket.emit('sync-video', { type: 'play', time: video.currentTime }); };
     video.onpause = () => { updateIcons(); if(isHost) socket.emit('sync-video', { type: 'pause', time: video.currentTime }); };
     function updateIcons() { document.getElementById('playIcon').classList.toggle('hidden', !video.paused); document.getElementById('pauseIcon').classList.toggle('hidden', video.paused); }
-    setInterval(() => document.getElementById('timeDisplay').innerText = `${Math.floor(video.currentTime/60)}:${Math.floor(video.currentTime%60)<10?'0':''}${Math.floor(video.currentTime%60)} / ${Math.floor(video.duration/60)}:${Math.floor(video.duration%60)<10?'0':''}${Math.floor(video.duration%60)}`, 1000);
-    function formatTime(s) { return s; }
+    setInterval(() => {
+      const ct = Math.floor(video.currentTime); const d = Math.floor(video.duration);
+      document.getElementById('timeDisplay').innerText = `${Math.floor(ct/60)}:${ct%60<10?'0':''}${ct%60} / ${Math.floor(d/60)}:${d%60<10?'0':''}${d%60}`;
+    }, 1000);
+    
     function toggleFullscreen() { const w = document.querySelector('.video-wrapper'); if(!document.fullscreenElement) w.requestFullscreen(); else document.exitFullscreen(); }
     
     socket.on('sync-video', (data) => {
       if(data.type === 'play') video.play();
       if(data.type === 'pause') video.pause();
-      video.currentTime = data.time;
+      if(data.time) video.currentTime = data.time;
     });
     
     function requestSync() { socket.emit('request-state'); }
-    socket.on('get-state', (data) => socket.emit('send-state', { to: data.requester, time: video.currentTime, playing: !video.paused }));
+    
+    // Host receives request for state
+    socket.on('get-state', (data) => {
+      socket.emit('send-state', { to: data.requester, time: video.currentTime, playing: !video.paused });
+    });
 
+    // --- 4. SOURCE & CHAT LOGIC ---
     function toggleSource() { document.getElementById('sourceControls').classList.toggle('hidden'); }
     function loadLink() {
       if(!isHost) return;
@@ -299,13 +289,7 @@
       socket.emit('chat-message', { name: myName, msg: input.value });
       input.value = '';
     }
-    socket.on('chat-message', (data) => {
-      const div = document.createElement('div');
-      div.className = 'chat-message text-sm p-2 rounded bg-white/5';
-      div.innerHTML = `<span class="font-bold text-teal-400">${data.name}:</span> ${data.msg}`;
-      document.getElementById('chatBox').appendChild(div);
-      document.getElementById('chatBox').scrollTop = 10000;
-    });
+    socket.on('chat-message', (data) => addChatMessage(data.name, data.msg, '#00d4aa'));
 
     function toggleChat() {
       const sidebar = document.getElementById('sidebar');
@@ -315,7 +299,7 @@
       bar.classList.toggle('sidebar-hidden');
     }
 
-    // --- WebRTC Logic (Same as before) ---
+    // --- 5. WEBRTC LOGIC ---
     async function startMedia() {
       try {
         myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -323,6 +307,7 @@
         myStream.getVideoTracks()[0].enabled = false;
       } catch(e) { console.log("No media"); }
     }
+    
     function toggleMic() { if(!myStream) return; myStream.getAudioTracks()[0].enabled = !myStream.getAudioTracks()[0].enabled; isMicOn = !isMicOn; document.getElementById('micOn').classList.toggle('hidden', !isMicOn); document.getElementById('micOff').classList.toggle('hidden', isMicOn); document.getElementById('micBtn').classList.toggle('active', isMicOn); }
     function toggleCam() { if(!myStream) return; myStream.getVideoTracks()[0].enabled = !myStream.getVideoTracks()[0].enabled; isCamOn = !isCamOn; document.getElementById('camOn').classList.toggle('hidden', !isCamOn); document.getElementById('camOff').classList.toggle('hidden', isCamOn); document.getElementById('camBtn').classList.toggle('active', isCamOn); Object.values(peers).forEach(pc => { const sender = pc.getSenders().find(s => s.track.kind === 'video'); if(sender) sender.replaceTrack(myStream.getVideoTracks()[0]); }); }
     
