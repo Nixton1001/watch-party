@@ -82,15 +82,11 @@ io.on('connection', (socket) => {
     socket.broadcast.to(roomId).emit('sync-video', data);
   });
 
-  // Guest asks for state
   socket.on('request-state', () => {
     const roomId = Object.keys(socket.rooms)[1];
-    if (rooms[roomId]) {
-      socket.to(rooms[roomId].host).emit('get-state', { requester: socket.id });
-    }
+    if (rooms[roomId]) socket.to(rooms[roomId].host).emit('get-state', { requester: socket.id });
   });
 
-  // Host sends state back
   socket.on('send-state', (data) => {
     io.to(data.to).emit('sync-video', { type: 'seek', time: data.time });
     if(data.playing) io.to(data.to).emit('sync-video', { type: 'play' });
