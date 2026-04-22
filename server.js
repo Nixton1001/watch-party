@@ -9,6 +9,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// --- STORAGE & MIDDLEWARE ---
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
 const storage = multer.diskStorage({
@@ -18,45 +19,63 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 app.use(express.static('public'));
+app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
+// --- ROUTES ---
+// Main Hub
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
+
+// Watch Together Page
+app.get('/watch.html', (req, res) => {
+  res.sendFile(__dirname + '/public/watch.html');
+});
+
+// Games Page
+app.get('/games.html', (req, res) => {
+  res.sendFile(__dirname + '/public/games.html');
+});
+
+// API: Leaderboard (Returns empty since no DB)
+app.get('/api/leaderboard', (req, res) => {
+  res.json([]);
+});
+
+// Upload Video
 app.post('/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
   res.json({ filePath: `/uploads/${req.file.filename}` });
 });
 
-const rooms = {};
+// --- SOCKET LOGIC ---
+const rooms = {}; // In-Memory Storage
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
+  // --- WATCH TOGETHER LOGIC ---
+  
   socket.on('create-room', (data) => {
     const roomId = generateRoomId();
     rooms[roomId] = {
       host: socket.id,
       videoSrc: '',
-      welcomeMsg: 'Welcome to the Party!',
+      welcomeMsg: 'Welcome!',
       users: [{ id: socket.id, name: data.name }]
     };
     socket.join(roomId);
     socket.roomId = roomId;
+    console.log(`Room created: ${roomId}`);
     socket.emit('room-created', { roomId });
-  });
-
-  socket.on('set-welcome', (data) => {
-    if (socket.roomId && rooms[socket.roomId] && rooms[socket.roomId].host === socket.id) {
-      rooms[socket.roomId].welcomeMsg = data.msg;
-    }
   });
 
   socket.on('join-room', (data) => {
     const room = rooms[data.roomId];
-    if (!room) return socket.emit('error', 'Room not found');
+    if (!room) return socket.emit('error', 'Room not found or expired');
     
     socket.roomId = data.roomId;
-    
-    // --- FIX: Removed duplicate emit ---
-    // We only need to broadcast to the room. The host is in the room.
     socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
     
     room.users.push({ id: socket.id, name: data.name });
@@ -65,15 +84,11 @@ io.on('connection', (socket) => {
     socket.emit('room-joined', { 
       roomId: data.roomId, 
       videoSrc: room.videoSrc,
-      welcomeMsg: room.welcomeMsg,
-      users: room.users 
+      welcomeMsg: room.welcomeMsg
     });
   });
 
-  socket.on('signal', (data) => {
-    // Relay signal to specific peer
-    io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
-  });
+  socket.on('signal', (data) => io.to(data.to).emit('signal', { from: socket.id, signal: data.signal }));
 
   socket.on('change-src', (data) => {
     if (socket.roomId && rooms[socket.roomId]) {
@@ -101,7 +116,21 @@ io.on('connection', (socket) => {
     if(socket.roomId) io.to(socket.roomId).emit('chat-message', data);
   });
 
-  socket.on('disconnect', () => console.log('User disconnected:', socket.id));
+  // --- USER & GAME LOGIC (No DB, just console logs) ---
+  
+  socket.on('save-user', (name) => {
+    console.log(`User saved (in-memory): ${name}`);
+  });
+
+  socket.on('game-finished', (data) => {
+    console.log(`Game finished (no DB to save):`, data);
+    // Broadcast update anyway so UI feels responsive
+    io.emit('leaderboard-update'); 
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
 });
 
 function generateRoomId() { 
