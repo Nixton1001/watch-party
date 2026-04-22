@@ -21,7 +21,7 @@
     .splash-sub { margin-top: 1rem; font-size: 1.5rem; color: rgba(255,255,255,0.8); animation: slideUp 1.2s ease; display: flex; align-items: center; gap: 10px; }
     .splash-heart { color: #ff4757; animation: heartBeat 1.5s ease infinite; }
 
-    /* 2. JOIN OVERLAY (FIX: Z-Index 10000 to be on top of splash) */
+    /* 2. JOIN OVERLAY */
     #join-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; flex-direction: column; }
     .join-text { font-size: 3rem; font-weight: bold; text-align: center; padding: 20px; animation: slideUp 0.5s ease; }
 
@@ -223,18 +223,20 @@
     socket.on('room-created', (data) => { isHost = true; initRoom(data.roomId); });
     
     socket.on('room-joined', (data) => { 
-      isHost = false; // Ensure guest knows they are not host
+      isHost = false; 
       initRoom(data.roomId); 
       
-      // FIX: Logic to handle video and welcome
+      // Show Welcome
       if(data.welcomeMsg) showJoinOverlay(data.welcomeMsg);
       
+      // FIX: Check if video exists on join
       if(data.videoSrc) {
         video.src = data.videoSrc;
+        document.getElementById('guestWaiting').classList.add('hidden'); // Hide waiting
         video.play().catch(e => console.log("Autoplay blocked"));
       }
       
-      // Ask for current time
+      // Sync time
       socket.emit('request-state');
     });
     
@@ -242,16 +244,16 @@
     
     function initRoom(id) {
       document.getElementById('entryPage').style.display = 'none';
-      // Hide splash immediately if entering room
       document.getElementById('splash-screen').style.display = 'none';
       
       document.getElementById('watchRoom').classList.remove('hidden');
       document.getElementById('displayRoomCode').innerText = id;
       
-      // FIX: Hide Host Settings for Guests
+      // UI Visibility
       if (!isHost) {
         document.getElementById('sourceControls').classList.add('hidden');
-        document.getElementById('guestWaiting').classList.remove('hidden');
+        // Only show waiting if no video source yet (handled by room-joined logic above)
+        if(!video.src) document.getElementById('guestWaiting').classList.remove('hidden');
       } else {
         document.getElementById('sourceControls').classList.remove('hidden');
         document.getElementById('guestWaiting').classList.add('hidden');
@@ -275,17 +277,10 @@
     function toggleFullscreen() { const w = document.querySelector('.video-wrapper'); if(!document.fullscreenElement) w.requestFullscreen(); else document.exitFullscreen(); }
     
     socket.on('sync-video', (data) => {
-      // If video src is missing, don't sync yet
       if(!video.src) return;
-
       if(data.type === 'play') video.play();
       if(data.type === 'pause') video.pause();
-      if(data.time) {
-          // Only seek if difference is large
-          if(Math.abs(video.currentTime - data.time) > 1) {
-             video.currentTime = data.time;
-          }
-      }
+      if(data.time && Math.abs(video.currentTime - data.time) > 1) video.currentTime = data.time;
     });
     
     function requestSync() { socket.emit('request-state'); }
@@ -295,15 +290,12 @@
     });
 
     // --- 4. SOURCE & CHAT LOGIC ---
-    function toggleSource() { 
-      if(isHost) document.getElementById('sourceControls').classList.toggle('hidden'); 
-    }
+    function toggleSource() { if(isHost) document.getElementById('sourceControls').classList.toggle('hidden'); }
     
     function loadLink() {
       if(!isHost) return;
       video.src = document.getElementById('videoLinkInput').value;
       socket.emit('change-src', { src: video.src });
-      //toggleSource(); // Keep open so host can verify
     }
     
     function uploadVideo(input) {
@@ -315,13 +307,11 @@
         video.src = data.filePath;
         socket.emit('change-src', { src: data.filePath });
         document.getElementById('uploadLabel').innerText = "Upload Video";
-        //toggleSource();
       });
     }
     
     socket.on('update-src', (data) => {
       video.src = data.src;
-      // Hide "Waiting" message for guest
       document.getElementById('guestWaiting').classList.add('hidden');
       video.play();
     });
