@@ -9,22 +9,28 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Ensure uploads directory exists
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
+// Configure Multer for video uploads
 const storage = multer.diskStorage({
   destination: './uploads/',
   filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
 const upload = multer({ storage: storage });
 
+// Serve static files from 'public' folder
 app.use(express.static('public'));
+// Serve uploaded videos
 app.use('/uploads', express.static('uploads'));
 
+// Handle video file upload
 app.post('/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
   res.json({ filePath: `/uploads/${req.file.filename}` });
 });
 
+// In-memory room storage
 const rooms = {};
 
 io.on('connection', (socket) => {
@@ -39,8 +45,8 @@ io.on('connection', (socket) => {
       users: [{ id: socket.id, name: data.name }]
     };
     socket.join(roomId);
-    socket.roomId = roomId; // Store roomId in socket
-    socket.emit('room-created', { roomId, isHost: true });
+    socket.roomId = roomId;
+    socket.emit('room-created', { roomId });
   });
 
   socket.on('set-welcome', (data) => {
@@ -53,8 +59,9 @@ io.on('connection', (socket) => {
     const room = rooms[data.roomId];
     if (!room) return socket.emit('error', 'Room not found');
     
-    socket.roomId = data.roomId; // Store roomId in socket
+    socket.roomId = data.roomId;
     
+    // Notify host and others
     socket.to(room.host).emit('user-joined', { id: socket.id, name: data.name });
     socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
     
@@ -69,7 +76,9 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('signal', (data) => io.to(data.to).emit('signal', { from: socket.id, signal: data.signal }));
+  socket.on('signal', (data) => {
+    io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
+  });
 
   socket.on('change-src', (data) => {
     if (socket.roomId && rooms[socket.roomId]) {
@@ -97,10 +106,15 @@ io.on('connection', (socket) => {
     if(socket.roomId) io.to(socket.roomId).emit('chat-message', data);
   });
 
-  socket.on('disconnect', () => console.log('User disconnected:', socket.id));
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+    // Optional: Clean up rooms if host leaves
+  });
 });
 
-function generateRoomId() { return Math.random().toString(36).substring(2, 8).toUpperCase(); }
+function generateRoomId() { 
+  return Math.random().toString(36).substring(2, 8).toUpperCase(); 
+}
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
