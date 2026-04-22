@@ -198,7 +198,6 @@
     const messagesContainer = document.getElementById('messagesContainer');
     
     let myStream, myName, isHost = false, isMicOn = false, isCamOn = false;
-    let isChatOpen = true; 
     const peers = {}, users = {};
 
     // --- 1. INIT ---
@@ -232,16 +231,14 @@
 
     function showJoinInput() { document.getElementById('joinContainer').classList.toggle('hidden'); }
 
-    // --- 2. PERMISSION & ROOM LOGIC (FIXED AWAIT) ---
+    // --- 2. PERMISSION & ROOM LOGIC ---
     
     async function getMedia() {
       try {
-        // Check if secure context
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            console.warn("Media devices not available (use HTTPS or localhost)");
+            console.warn("Media devices not available");
             return;
         }
-
         // Try Video + Audio
         myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         setupStream(true, true);
@@ -263,23 +260,15 @@
 
     async function handleCreate() {
       myName = document.getElementById('usernameInput').value || 'Host';
-      
-      // AWAIT IS CRITICAL HERE. 
-      // We must wait for camera before creating the room, otherwise the WebRTC 'Offer' will have no tracks.
-      await getMedia(); 
-      
+      await getMedia(); // Wait for media before creating room
       socket.emit('create-room', { name: myName });
     }
 
     async function handleJoin() {
       const roomId = document.getElementById('roomCodeInput').value;
       if(!roomId) return;
-      
       myName = document.getElementById('usernameInput').value || 'Guest';
-      
-      // AWAIT IS CRITICAL HERE.
-      await getMedia();
-      
+      await getMedia(); // Wait for media before joining room
       socket.emit('join-room', { roomId: roomId, name: myName });
     }
     
@@ -321,11 +310,9 @@
       else document.getElementById('guestWaiting').classList.add('hidden');
       
       if(window.innerWidth <= 768) {
-          isChatOpen = false;
           sidebar.classList.remove('open');
           sidebar.classList.add('hidden');
       } else {
-          isChatOpen = true;
           sidebar.classList.remove('hidden');
           verticalBar.classList.remove('sidebar-hidden');
       }
@@ -479,12 +466,24 @@
     });
 
     function createPeerConnection(peerId) {
-      const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+      const config = { 
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ] 
+      };
       const pc = new RTCPeerConnection(config);
       
+      // CRITICAL FIX: Always create transceivers to RECEIVE media, 
+      // even if we don't have a camera/mic ourselves.
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+
+      // Then add our own tracks if available
       if(myStream) myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
       
       pc.ontrack = (event) => {
+        console.log("Received track", event.track.kind);
         let videoEl = document.getElementById(`video-${peerId}`);
         if (!videoEl) {
           const div = document.createElement('div'); div.className = 'peer-video'; div.id = `container-${peerId}`;
@@ -505,6 +504,10 @@
       
       pc.onicecandidate = (event) => { 
         if (event.candidate) socket.emit('signal', { to: peerId, signal: { candidate: event.candidate } }); 
+      };
+
+      pc.oniceconnectionstatechange = () => {
+          console.log(`ICE State: ${pc.iceConnectionState}`);
       };
       
       return pc;
