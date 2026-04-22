@@ -51,6 +51,9 @@
     .icon-btn:hover { border-color: var(--primary); box-shadow: 0 0 10px var(--primary); }
     .icon-btn.active { background: var(--primary); color: black; border-color: var(--primary); box-shadow: 0 0 15px var(--primary); }
     .icon-btn.danger { background: #ff4757; border-color: #ff4757; }
+    
+    /* Disabled state for buttons if media fails */
+    .icon-btn.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 
     .peer-video { position: absolute; bottom: 80px; right: 20px; width: 150px; height: 100px; background: #000; border: 1px solid var(--secondary); border-radius: 8px; overflow: hidden; z-index: 40; }
     .peer-video video { width: 100%; height: 100%; object-fit: cover; }
@@ -173,12 +176,14 @@
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/></svg>
       </button>
       
-      <button id="micBtn" class="icon-btn" title="Mic">
+      <!-- MIC BUTTON -->
+      <button id="micBtn" class="icon-btn disabled" title="Mic">
         <svg id="micOn" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
         <svg id="micOff" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
       </button>
 
-      <button onclick="toggleCam()" id="camBtn" class="icon-btn" title="Camera">
+      <!-- CAM BUTTON -->
+      <button onclick="toggleCam()" id="camBtn" class="icon-btn disabled" title="Camera">
         <svg id="camOn" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
         <svg id="camOff" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
       </button>
@@ -197,14 +202,27 @@
     const verticalBar = document.getElementById('verticalBar');
     const messagesContainer = document.getElementById('messagesContainer');
     
-    let myStream, myName, isHost = false, isMicOn = false, isCamOn = false;
+    let myStream = null; // Default null
+    let myName, isHost = false, isMicOn = false, isCamOn = false;
     let isChatOpen = true; 
     const peers = {}, users = {};
 
     // --- 1. INIT ---
     window.onload = () => {
       document.getElementById('entryPage').style.display = 'flex';
+      // Disable buttons initially until media is ready
+      disableMediaButtons();
     };
+
+    function disableMediaButtons() {
+        document.getElementById('micBtn').classList.add('disabled');
+        document.getElementById('camBtn').classList.add('disabled');
+    }
+
+    function enableMediaButtons() {
+        document.getElementById('micBtn').classList.remove('disabled');
+        document.getElementById('camBtn').classList.remove('disabled');
+    }
 
     function addChatMessage(name, msg, color = 'white') {
       const div = document.createElement('div');
@@ -224,50 +242,61 @@
     function copyCode() {
         const code = document.getElementById('displayRoomCodeChat').innerText;
         navigator.clipboard.writeText(code);
-        alert("Room Code Copied: " + code);
+        // Visual feedback instead of alert
+        const el = document.getElementById('displayRoomCodeChat');
+        const originalText = el.innerText;
+        el.innerText = "COPIED!";
+        setTimeout(() => el.innerText = originalText, 1000);
     }
 
     function showJoinInput() { document.getElementById('joinContainer').classList.toggle('hidden'); }
 
-    // --- 2. PERMISSION & ROOM LOGIC (ULTIMATE FIX) ---
+    // --- 2. PERMISSION & ROOM LOGIC ---
     
-    // This function tries to get media, but NEVER blocks the room creation
-    async function safeGetMedia() {
+    async function initMedia() {
       try {
+        // Check if secure context
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            console.warn("Media devices not available (use HTTPS or localhost)");
+            return;
+        }
+
         // Try Video + Audio
         myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         setupStream(true, true);
-        console.log("Media: Video and Audio acquired");
+        enableMediaButtons(); // Enable buttons on success
+        console.log("Media acquired: Video + Audio");
       } catch (e1) {
+        console.log("Video+Audio failed:", e1.message);
         try {
           // Fallback 1: Just Audio
           myStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
           setupStream(false, true);
-          console.log("Media: Audio only acquired");
+          enableMediaButtons(); // Enable buttons on success
+          console.log("Media acquired: Audio Only");
         } catch (e2) {
-          // Fallback 2: No media available/allowed
-          console.log("Media: No devices available or permission denied. Proceeding without media.");
+          console.log("Audio only failed:", e2.message);
+          // Fallback 2: No media
           myStream = null;
+          disableMediaButtons(); // Keep buttons disabled
         }
       }
     }
 
     async function handleCreate() {
-      // Get media in background, DON'T wait for it to succeed/fail to start logic
-      safeGetMedia(); 
-      
       myName = document.getElementById('usernameInput').value || 'Host';
+      // Don't await, let it happen in background
+      initMedia(); 
       socket.emit('create-room', { name: myName });
     }
 
     async function handleJoin() {
       const roomId = document.getElementById('roomCodeInput').value;
-      if(!roomId) return alert('Enter code');
+      if(!roomId) return;
       
-      // Get media in background
-      safeGetMedia();
-
       myName = document.getElementById('usernameInput').value || 'Guest';
+      // Don't await
+      initMedia();
       socket.emit('join-room', { roomId: roomId, name: myName });
     }
     
@@ -415,14 +444,14 @@
     }
 
     function toggleMic() {
-      if(!myStream) return console.log("No microphone available.");
+      if(!myStream) return; // Silently fail if no stream
       const track = myStream.getAudioTracks()[0];
       if(track) track.enabled = !track.enabled;
       updateMicUI();
     }
 
     function toggleCam() { 
-      if(!myStream) return console.log("No camera available.");
+      if(!myStream) return; // Silently fail if no stream
       const tracks = myStream.getVideoTracks();
       if(tracks.length > 0) tracks[0].enabled = !tracks[0].enabled;
       updateCamUI();
