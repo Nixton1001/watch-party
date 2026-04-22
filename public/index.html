@@ -15,14 +15,14 @@
     @keyframes slideUp { 0% { opacity: 0; transform: translateY(50px); } 100% { opacity: 1; transform: translateY(0); } }
     @keyframes heartBeat { 0% { transform: scale(1); } 25% { transform: scale(1.1); } 40% { transform: scale(1); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
 
-    /* Splash Screen */
+    /* 1. SPLASH SCREEN */
     #splash-screen { position: fixed; inset: 0; z-index: 9999; background: #0f0f11; display: flex; flex-direction: column; align-items: center; justify-content: center; animation: fadeOut 1s ease 3s forwards; }
     .splash-title { font-size: 4rem; font-weight: 800; text-align: center; animation: slideUp 1s ease; background: linear-gradient(to right, #00d4aa, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     .splash-sub { margin-top: 1rem; font-size: 1.5rem; color: rgba(255,255,255,0.8); animation: slideUp 1.2s ease; display: flex; align-items: center; gap: 10px; }
     .splash-heart { color: #ff4757; animation: heartBeat 1.5s ease infinite; }
 
-    /* Join Overlay */
-    #join-overlay { position: fixed; inset: 0; z-index: 9998; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; flex-direction: column; }
+    /* 2. JOIN OVERLAY (FIX: Z-Index 10000 to be on top of splash) */
+    #join-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; flex-direction: column; }
     .join-text { font-size: 3rem; font-weight: bold; text-align: center; padding: 20px; animation: slideUp 0.5s ease; }
 
     /* Chat */
@@ -90,7 +90,7 @@
     
     <!-- Video Player -->
     <div class="flex-1 flex flex-col bg-black relative video-wrapper">
-      <video id="mainVideo" class="w-full h-full"></video>
+      <video id="mainVideo" class="w-full h-full" playsinline></video>
       
       <div class="video-controls flex items-center justify-between">
         <div class="flex items-center gap-2">
@@ -115,6 +115,7 @@
     <!-- Sidebar -->
     <div id="sidebar" class="w-80 h-full glass flex flex-col border-l border-white/10 transition-all duration-300 z-40">
       
+      <!-- Source Controls (Host Only) -->
       <div id="sourceControls" class="p-4 border-b border-white/10 space-y-3">
         <h3 class="text-xs text-gray-400 uppercase tracking-wider">Host Settings</h3>
         <input type="text" id="welcomeMsgInput" placeholder="Welcome Message" class="w-full bg-black/30 text-sm p-2 rounded border border-white/10 focus:outline-none" onchange="updateWelcomeMsg(this.value)">
@@ -126,6 +127,11 @@
           <input type="file" id="videoUpload" accept="video/*" onchange="uploadVideo(this)" class="hidden">
           <span id="uploadLabel">Upload Video</span>
         </label>
+      </div>
+
+      <!-- Guest Waiting Message (Hidden by default) -->
+      <div id="guestWaiting" class="hidden p-4 border-b border-white/10 text-center text-gray-400 text-sm">
+        Waiting for Host to start video...
       </div>
 
       <div id="chatBox" class="flex-1 overflow-y-auto chat-scroll p-4 space-y-2"></div>
@@ -181,7 +187,6 @@
       }, 3000);
     };
 
-    // FIX: Defined addChatMessage properly
     function addChatMessage(name, msg, color = 'white') {
       const div = document.createElement('div');
       div.className = 'chat-message text-sm p-2 rounded bg-white/5';
@@ -218,11 +223,18 @@
     socket.on('room-created', (data) => { isHost = true; initRoom(data.roomId); });
     
     socket.on('room-joined', (data) => { 
+      isHost = false; // Ensure guest knows they are not host
       initRoom(data.roomId); 
-      if(data.videoSrc) video.src = data.videoSrc;
+      
+      // FIX: Logic to handle video and welcome
       if(data.welcomeMsg) showJoinOverlay(data.welcomeMsg);
       
-      // FIX: Request video time immediately after joining
+      if(data.videoSrc) {
+        video.src = data.videoSrc;
+        video.play().catch(e => console.log("Autoplay blocked"));
+      }
+      
+      // Ask for current time
       socket.emit('request-state');
     });
     
@@ -230,8 +242,21 @@
     
     function initRoom(id) {
       document.getElementById('entryPage').style.display = 'none';
+      // Hide splash immediately if entering room
+      document.getElementById('splash-screen').style.display = 'none';
+      
       document.getElementById('watchRoom').classList.remove('hidden');
       document.getElementById('displayRoomCode').innerText = id;
+      
+      // FIX: Hide Host Settings for Guests
+      if (!isHost) {
+        document.getElementById('sourceControls').classList.add('hidden');
+        document.getElementById('guestWaiting').classList.remove('hidden');
+      } else {
+        document.getElementById('sourceControls').classList.remove('hidden');
+        document.getElementById('guestWaiting').classList.add('hidden');
+      }
+      
       startMedia();
     }
     
@@ -250,26 +275,37 @@
     function toggleFullscreen() { const w = document.querySelector('.video-wrapper'); if(!document.fullscreenElement) w.requestFullscreen(); else document.exitFullscreen(); }
     
     socket.on('sync-video', (data) => {
+      // If video src is missing, don't sync yet
+      if(!video.src) return;
+
       if(data.type === 'play') video.play();
       if(data.type === 'pause') video.pause();
-      if(data.time) video.currentTime = data.time;
+      if(data.time) {
+          // Only seek if difference is large
+          if(Math.abs(video.currentTime - data.time) > 1) {
+             video.currentTime = data.time;
+          }
+      }
     });
     
     function requestSync() { socket.emit('request-state'); }
     
-    // Host receives request for state
     socket.on('get-state', (data) => {
       socket.emit('send-state', { to: data.requester, time: video.currentTime, playing: !video.paused });
     });
 
     // --- 4. SOURCE & CHAT LOGIC ---
-    function toggleSource() { document.getElementById('sourceControls').classList.toggle('hidden'); }
+    function toggleSource() { 
+      if(isHost) document.getElementById('sourceControls').classList.toggle('hidden'); 
+    }
+    
     function loadLink() {
       if(!isHost) return;
       video.src = document.getElementById('videoLinkInput').value;
       socket.emit('change-src', { src: video.src });
-      toggleSource();
+      //toggleSource(); // Keep open so host can verify
     }
+    
     function uploadVideo(input) {
       if(!isHost) return;
       const formData = new FormData();
@@ -278,10 +314,17 @@
       fetch('/upload', { method: 'POST', body: formData }).then(r => r.json()).then(data => {
         video.src = data.filePath;
         socket.emit('change-src', { src: data.filePath });
-        toggleSource();
+        document.getElementById('uploadLabel').innerText = "Upload Video";
+        //toggleSource();
       });
     }
-    socket.on('update-src', (data) => video.src = data.src);
+    
+    socket.on('update-src', (data) => {
+      video.src = data.src;
+      // Hide "Waiting" message for guest
+      document.getElementById('guestWaiting').classList.add('hidden');
+      video.play();
+    });
 
     function sendMessage() {
       const input = document.getElementById('chatInput');
