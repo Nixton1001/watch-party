@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Watch-Night | Game</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --primary: #00f3ff; --secondary: #bc13fe; --bg: #050505; }
+    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow: hidden; user-select: none; }
+    @keyframes glowPulse { 0% { box-shadow: 0 0 20px var(--primary); } 50% { box-shadow: 0 0 40px var(--primary), 0 0 60px var(--secondary); } 100% { box-shadow: 0 0 20px var(--primary); } }
+    .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; border: none; transition: 0.2s; }
+    .neon-btn:hover { filter: brightness(1.2); }
+    .room-code-big { font-family: 'Orbitron'; font-size: 3rem; font-weight: 900; letter-spacing: 8px; color: var(--primary); text-shadow: 0 0 15px var(--primary); }
+    
+    /* TTT */
+    .ttt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 280px; height: 280px; }
+    .ttt-cell { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron'; font-size: 4rem; cursor: pointer; transition: 0.2s; }
+    .ttt-cell:hover { background: rgba(255,255,255,0.1); }
+    .ttt-cell.x { color: var(--primary); text-shadow: 0 0 20px var(--primary); }
+    .ttt-cell.o { color: var(--secondary); text-shadow: 0 0 20px var(--secondary); }
+    .ttt-cell.win { animation: glowPulse 1s infinite; }
+    
+    /* Reflex */
+    .reflex-box { transition: background 0.1s; user-select: none; }
+    .reflex-go { background: rgba(0, 243, 255, 0.4) !important; border-color: white !important; }
+    .reflex-wait { background: rgba(188, 19, 254, 0.1) !important; }
+
+    /* Common Call UI */
+    .call-fab { position: fixed; bottom: 20px; right: 20px; z-index: 999; width: 60px; height: 60px; border-radius: 50%; background: rgba(10, 10, 10, 0.8); border: 2px solid var(--primary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; color: white; }
+    .call-fab.active { background: var(--primary); color: black; box-shadow: 0 0 20px var(--primary); }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+
+  <!-- WAITING SCREEN -->
+  <div id="waitingScreen" class="h-full w-full hidden flex flex-col items-center justify-center p-6">
+    <div class="text-center glass p-10 rounded-2xl max-w-sm w-full">
+      <div class="text-6xl mb-4">⏳</div>
+      <h2 class="text-3xl font-bold mb-2" style="font-family: 'Orbitron'">Waiting for Opponent</h2>
+      <p class="text-gray-400 text-sm mb-2">Share this code:</p>
+      <div id="roomCodeDisplay" class="room-code-big mb-6" onclick="navigator.clipboard.writeText(this.innerText)">------</div>
+      <div class="w-10 h-10 border-4 border-t-[var(--primary)] border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mx-auto"></div>
+    </div>
+  </div>
+
+  <!-- GAME ARENA -->
+  <div id="gameArena" class="hidden h-full w-full flex flex-col">
+    <header class="glass p-3 border-b border-white/10 flex justify-between items-center">
+      <div class="flex flex-col items-start">
+        <span class="text-xs opacity-50">YOU (<span id="mySymbol">X</span>)</span>
+        <span id="myName" class="font-bold text-[var(--primary)]">Player</span>
+      </div>
+      
+      <!-- SCOREBOARD -->
+      <div class="flex flex-col items-center">
+        <div class="flex items-center gap-3 text-xl font-bold font-mono">
+          <span id="scoreX" class="text-[var(--primary)]">0</span>
+          <span class="text-gray-500">:</span>
+          <span id="scoreO" class="text-[var(--secondary)]">0</span>
+        </div>
+        <div id="turnIndicator" class="text-xs bg-black/50 px-3 py-0.5 rounded mt-1">...</div>
+      </div>
+
+      <div class="flex flex-col items-end">
+        <span class="text-xs opacity-50">ENEMY (<span id="oppSymbol">O</span>)</span>
+        <span id="oppName" class="font-bold text-[var(--secondary)]">Opponent</span>
+      </div>
+    </header>
+
+    <main id="gameContent" class="flex-1 flex flex-col items-center justify-center p-4"></main>
+    
+    <footer class="p-4 text-center">
+      <button onclick="window.location.href='/'" class="text-gray-500 hover:text-red-500 text-xs uppercase">Leave Room</button>
+    </footer>
+  </div>
+
+  <!-- COMMON CALL BUTTON (Floating) -->
+  <button onclick="toggleMic()" id="micBtn" class="call-fab" title="Toggle Microphone">🎤</button>
+
+  <script>
+    const socket = io();
+    let myData = { name: '', symbol: '', id: '' };
+    let currentRoom = null;
+    let gameScores = { X: 0, O: 0 };
+
+    // --- COMMON CALL SYSTEM (WebRTC) ---
+    let myStream = null;
+    let isMicOn = false;
+    const peers = {}; 
+
+    async function setupCall() {
+      try {
+        myStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+        isMicOn = true; updateMicUI();
+      } catch (e) { console.log("Mic denied"); }
+    }
+
+    function toggleMic() {
+      isMicOn = !isMicOn;
+      if(myStream) myStream.getAudioTracks()[0].enabled = isMicOn;
+      updateMicUI();
+    }
+
+    function updateMicUI() {
+      const btn = document.getElementById('micBtn');
+      btn.classList.toggle('active', isMicOn);
+      btn.innerText = isMicOn ? '🎤' : '🔇';
+    }
+
+    function createPeerConnection(userId) {
+      if (peers[userId]) return;
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      peers[userId] = pc;
+      if (myStream) myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
+      
+      pc.ontrack = (event) => {
+        let audio = document.getElementById(`audio-${userId}`);
+        if (!audio) { audio = document.createElement('audio'); audio.id = `audio-${userId}`; audio.autoplay = true; document.body.appendChild(audio); }
+        audio.srcObject = event.streams[0];
+      };
+      
+      pc.onicecandidate = (e) => { if (e.candidate) socket.emit('signal', { to: userId, signal: e.candidate }); };
+      
+      pc.onnegotiationneeded = async () => {
+        try { const o = await pc.createOffer(); await pc.setLocalDescription(o); socket.emit('signal', { to: userId, signal: o }); } catch (e) {}
+      };
+    }
+
+    socket.on('signal', async (data) => {
+      if (!peers[data.from]) createPeerConnection(data.from);
+      const pc = peers[data.from];
+      try {
+        if (data.signal.type === 'offer') { await pc.setRemoteDescription(new RTCSessionDescription(data.signal)); const a = await pc.createAnswer(); await pc.setLocalDescription(a); socket.emit('signal', { to: data.from, signal: a }); } 
+        else if (data.signal.type === 'answer') await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+        else if (data.signal.candidate) await pc.addIceCandidate(new RTCIceCandidate(data.signal));
+      } catch (e) { console.error(e); }
+    });
+
+    function closePeer(userId) { if(peers[userId]) { peers[userId].close(); delete peers[userId]; const a=document.getElementById(`audio-${userId}`); if(a)a.remove(); } }
+
+    // --- GAME INIT ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const action = urlParams.get('action');
+    const roomParam = urlParams.get('room');
+    const gameParam = urlParams.get('game');
+
+    window.onload = async () => {
+      // 1. Check Name
+      const storedName = localStorage.getItem('watchNightName');
+      if(!storedName) return window.location.href = '/';
+      
+      myData.name = storedName;
+      myData.id = localStorage.getItem('watchNightUid') || Math.random().toString(36).substring(2, 10);
+      
+      // 2. Init Call
+      await setupCall();
+
+      // 3. Join/Create Logic
+      if (!action || !roomParam) window.location.href = '/';
+      
+      if (action === 'create') {
+        myData.symbol = 'X';
+        currentRoom = roomParam;
+        document.getElementById('waitingScreen').classList.remove('hidden');
+        document.getElementById('roomCodeDisplay').innerText = roomParam;
+        socket.emit('create-game-room', { name: myData.name, roomId: roomParam, gameType: gameParam || 'tictactoe' });
+      } else if (action === 'join') {
+        myData.symbol = 'O';
+        currentRoom = roomParam;
+        socket.emit('join-game-room', { roomId: roomParam, name: myData.name });
+      }
+    };
+
+    socket.on('game-error', (msg) => { alert(msg); window.location.href = '/'; });
+
+    // --- GAME START (Initial & Restart) ---
+    socket.on('game-start', (data) => {
+      document.getElementById('waitingScreen').classList.add('hidden');
+      document.getElementById('gameArena').classList.remove('hidden');
+      
+      const me = data.players.find(p => p.symbol === myData.symbol);
+      const opp = data.players.find(p => p.symbol !== myData.symbol);
+      
+      document.getElementById('myName').innerText = me.name;
+      document.getElementById('oppName').innerText = opp.name;
+      document.getElementById('mySymbol').innerText = me.symbol;
+      document.getElementById('oppSymbol').innerText = opp.symbol;
+
+      if(data.scores) gameScores = data.scores;
+      
+      if(data.gameType === 'tictactoe') initTTT(data);
+      else initReflex();
+      
+      if(!peers[opp.id]) createPeerConnection(opp.id);
+    });
+
+    socket.on('user-disconnected', (data) => closePeer(data.id)); // Standard disconnect
+
+    // --- TIC TAC TOE ---
+    let tttBoard = Array(9).fill(null);
+    function initTTT(d){ tttBoard=d.board; renderTTT(d.turn, null); }
+    
+    function renderTTT(turn, win=null) {
+      const myTurn = turn === myData.symbol;
+      document.getElementById('turnIndicator').innerText = win ? "Game Over" : (myTurn ? "Your Turn!" : "Opponent's Turn");
+      document.getElementById('turnIndicator').className = `text-xs px-3 py-0.5 rounded mt-1 ${myTurn && !win ? 'bg-[var(--primary)] text-black' : 'bg-black/50'}`;
+      document.getElementById('scoreX').innerText = gameScores.X;
+      document.getElementById('scoreO').innerText = gameScores.O;
+
+      let html = `<div class="ttt-grid">`;
+      tttBoard.forEach((c,i) => {
+        const isWin = win && typeof win !== 'string' && win.includes(i);
+        const click = !c && myTurn && !win ? `onclick="socket.emit('ttt-move',{index:${i},roomId:currentRoom})"` : '';
+        html += `<div class="ttt-cell ${c==='X'?'x':(c==='O'?'o':'')} ${isWin?'win':''}" ${click}>${c||''}</div>`;
+      });
+      html += `</div>`;
+      
+      if(win) {
+        const resultText = win==='draw'?'Draw!':(tttBoard[win[0]]===myData.symbol?'You Win!':'You Lose!');
+        html += `<div class="mt-6 text-center animate-pulse">`;
+        html += `<h3 class="text-3xl font-bold ${win==='draw'?'text-gray-400':(tttBoard[win[0]]===myData.symbol?'text-green-400':'text-red-400')}">${resultText}</h3>`;
+        if(myData.symbol === 'X') html += `<button onclick="socket.emit('restart-game', {roomId: currentRoom})" class="neon-btn mt-4 px-6 py-2 rounded-lg">Play Again</button>`;
+        html += `</div>`;
+      }
+      
+      document.getElementById('gameContent').innerHTML = html;
+    }
+    
+    socket.on('ttt-update', (d) => { tttBoard=d.board; if(d.scores) gameScores=d.scores; renderTTT(d.turn, d.line||d.winner); });
+
+    // --- REFLEX ---
+    function initReflex(){ document.getElementById('turnIndicator').innerText="Reflex Duel"; renderReflex('idle'); }
+    
+    function renderReflex(state, res=null){
+      document.getElementById('scoreX').innerText = gameScores.X;
+      document.getElementById('scoreO').innerText = gameScores.O;
+
+      let h = res ? `<div class="text-2xl font-bold mb-4 ${res.type==='win'?'text-green-400':'text-red-400'}">${res.text}</div>` : '';
+      h += `<div class="flex flex-col items-center"><div id="reflexBox" class="w-72 h-72 glass border-2 rounded-2xl flex items-center justify-center flex-col cursor-pointer reflex-box ${state==='waiting'?'reflex-wait':''} ${state==='go'?'reflex-go':''}"><p class="text-4xl font-bold">${state==='go'?'GO!':(state==='waiting'?'WAIT':'START')}</p></div>`;
+      if(myData.symbol==='X') h += `<button onclick="socket.emit('start-reflex-round',{roomId:currentRoom})" class="neon-btn px-8 py-3 rounded-xl text-xl mt-6" ${state!=='idle'&&state!=='result'?'style="display:none"':''}>Start Round</button>`;
+      h += `</div>`;
+      document.getElementById('gameContent').innerHTML = h;
+      if(state==='waiting'||state==='go') document.getElementById('reflexBox').onclick=()=>socket.emit('reflex-tap',{roomId:currentRoom});
+    }
+
+    socket.on('reflex-state', (d) => renderReflex(d.status));
+    socket.on('reflex-result', (d) => {
+      if(d.scores) gameScores = d.scores;
+      let m = {type:'lose', text:'You Lost!'};
+      if(d.loser) m = socket.id===d.loser ? {type:'lose', text:'Too Early!'} : {type:'win', text:'Opponent Too Early! You Win!'};
+      else m = socket.id===d.winner ? {type:'win', text:'You Win!'} : {type:'lose', text:'Too Slow!'};
+      renderReflex('result', m);
+    });
+  </script>
+</body>
+</html>
