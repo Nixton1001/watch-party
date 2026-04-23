@@ -20,6 +20,9 @@
     .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; border: none; }
     .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--primary); transform: translateY(-2px); }
     
+    .outline-btn { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: white; transition: all 0.3s; }
+    .outline-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(0, 243, 255, 0.05); }
+
     .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; transition: all 0.3s; }
     .input-futuristic:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 10px rgba(0, 243, 255, 0.2); }
 
@@ -76,7 +79,32 @@
     <div class="mt-4 text-gray-400 animate-pulse">Loading...</div>
   </div>
 
-  <!-- PAGE 2: WATCH ROOM -->
+  <!-- PAGE 1: LOBBY (Shows if no parameters are present) -->
+  <div id="lobbyPage" class="hidden h-screen w-screen flex items-center justify-center">
+    <div class="glass p-8 rounded-2xl w-full max-w-md space-y-6 border-l-4 border-l-[var(--primary)] relative overflow-hidden">
+      <div class="absolute top-0 right-0 w-20 h-20 border-t-2 border-r-2 border-[var(--primary)] opacity-50 rounded-tr-2xl"></div>
+      
+      <div class="text-center">
+        <h1 class="text-4xl font-bold mb-2" style="font-family: 'Orbitron'">WATCH PARTY</h1>
+        <p class="text-gray-500 text-sm tracking-widest">SYNC & STREAM</p>
+      </div>
+      <div class="space-y-4">
+        <input type="text" id="usernameInput" placeholder="Identify Yourself" class="w-full input-futuristic rounded-lg p-3 text-lg">
+        
+        <div class="flex gap-2">
+          <button onclick="handleCreate()" class="flex-1 neon-btn py-3 rounded-lg text-lg">Create Room</button>
+          <button onclick="showJoinInput()" class="flex-1 outline-btn font-bold py-3 rounded-lg">Join Room</button>
+        </div>
+        <div id="joinContainer" class="hidden space-y-2">
+          <input type="text" id="roomCodeInput" placeholder="Enter Code" class="w-full input-futuristic rounded-lg p-3 uppercase tracking-widest text-center">
+          <button onclick="handleJoin()" class="w-full neon-btn py-3 rounded-lg text-lg">Connect</button>
+        </div>
+      </div>
+      <a href="/" class="block text-center text-gray-500 hover:text-white text-xs mt-4">← Back to Hub</a>
+    </div>
+  </div>
+
+  <!-- PAGE 2: WATCH ROOM (Shows if action=create or action=join) -->
   <div id="watchRoom" class="hidden h-screen w-screen flex relative">
     
     <!-- Video Player -->
@@ -180,19 +208,35 @@
       myName = urlParams.get('name') || 'Guest';
       const room = urlParams.get('room');
 
-      // Automatically start process based on parameters
-      await getMedia();
-
-      if (action === 'create') {
-        socket.emit('create-room', { name: myName });
-      } else if (action === 'join' && room) {
-        socket.emit('join-room', { roomId: room, name: myName });
+      if (action === 'create' || (action === 'join' && room)) {
+        // AUTOMATIC FLOW: Parameters exist
+        await getMedia();
+        if (action === 'create') socket.emit('create-room', { name: myName });
+        else socket.emit('join-room', { roomId: room, name: myName });
       } else {
-        // Fallback if no params, go back to home
-        window.location.href = '/';
+        // MANUAL FLOW: No parameters, show Lobby
+        document.getElementById('lobbyPage').classList.remove('hidden');
       }
     };
 
+    // --- LOBBY FUNCTIONS ---
+    function showJoinInput() { document.getElementById('joinContainer').classList.toggle('hidden'); }
+
+    async function handleCreate() {
+      myName = document.getElementById('usernameInput').value || 'Host';
+      await getMedia();
+      socket.emit('create-room', { name: myName });
+    }
+
+    async function handleJoin() {
+      myName = document.getElementById('usernameInput').value || 'Guest';
+      const room = document.getElementById('roomCodeInput').value.toUpperCase();
+      if(!room) return;
+      await getMedia();
+      socket.emit('join-room', { roomId: room, name: myName });
+    }
+
+    // --- CORE FUNCTIONS ---
     function addChatMessage(name, msg, color = 'white') {
       const div = document.createElement('div');
       div.className = 'chat-message text-sm';
@@ -217,27 +261,16 @@
         setTimeout(() => el.innerText = originalText, 1000);
     }
 
-    // --- 2. PERMISSION & ROOM LOGIC ---
-    
     async function getMedia() {
       try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            console.warn("Media devices not available (use HTTPS or localhost)");
-            return;
-        }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
         myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         setupStream(true, true);
-        console.log("Media acquired: Video + Audio");
       } catch (e1) {
-        console.log("Video+Audio failed:", e1.message);
         try {
           myStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
           setupStream(false, true);
-          console.log("Media acquired: Audio Only");
-        } catch (e2) {
-          console.log("Audio only failed:", e2.message);
-          myStream = null;
-        }
+        } catch (e2) { myStream = null; }
       }
     }
     
@@ -270,6 +303,7 @@
     socket.on('error', (msg) => alert(msg));
     
     function initRoom(id) {
+      document.getElementById('lobbyPage').classList.add('hidden');
       document.getElementById('watchRoom').classList.remove('hidden');
       document.getElementById('displayRoomCodeChat').innerText = id;
       
@@ -286,10 +320,7 @@
     }
     
     function leaveRoom() { window.location.href = '/'; }
-    function forcePlay() {
-        video.play();
-        document.getElementById('mobilePlayOverlay').style.display = 'none';
-    }
+    function forcePlay() { video.play(); document.getElementById('mobilePlayOverlay').style.display = 'none'; }
 
     // --- 3. VIDEO SYNC ---
     function togglePlayPause() { if(video.paused) video.play(); else video.pause(); }
@@ -396,7 +427,6 @@
 
     document.getElementById('micBtn').onclick = toggleMic;
     
-    // WebRTC User Joined
     socket.on('user-joined', async (data) => {
       if(isHost) {
         const pc = createPeerConnection(data.id);
@@ -409,13 +439,9 @@
       addChatMessage('System', `${data.name} joined`, '#888');
     });
 
-    // WebRTC Signal Handling
     socket.on('signal', async (data) => {
       const fromId = data.from;
-      if (!peers[fromId]) { 
-        const pc = createPeerConnection(fromId); 
-        peers[fromId] = pc; 
-      }
+      if (!peers[fromId]) { const pc = createPeerConnection(fromId); peers[fromId] = pc; }
       const pc = peers[fromId];
       
       try {
@@ -429,58 +455,32 @@
         } else if (data.signal.candidate) {
           await pc.addIceCandidate(new RTCIceCandidate(data.signal.candidate));
         }
-      } catch (e) {
-        console.error("Signal Error", e);
-      }
+      } catch (e) { console.error("Signal Error", e); }
     });
 
-    // Peer Connection Setup (The Fix for No Camera PC)
     function createPeerConnection(peerId) {
-      const config = { 
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ] 
-      };
+      const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
       const pc = new RTCPeerConnection(config);
       
-      // CRITICAL FIX: 
-      // Even if myStream is null (PC has no camera), we tell the browser 
-      // "I want to RECEIVE video and audio from the other person".
+      // FIX: Allow receiving video/audio even if we don't have a camera
       pc.addTransceiver('video', { direction: 'recvonly' });
       pc.addTransceiver('audio', { direction: 'recvonly' });
 
-      // If we DO have a stream, send it
       if(myStream) myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
       
       pc.ontrack = (event) => {
-        console.log("Received track", event.track.kind);
         let videoEl = document.getElementById(`video-${peerId}`);
         if (!videoEl) {
           const div = document.createElement('div'); div.className = 'peer-video'; div.id = `container-${peerId}`;
-          videoEl = document.createElement('video'); 
-          videoEl.id = `video-${peerId}`; 
-          videoEl.autoplay = true; 
-          videoEl.playsInline = true;
-          
+          videoEl = document.createElement('video'); videoEl.id = `video-${peerId}`; videoEl.autoplay = true; videoEl.playsInline = true;
           const nameTag = document.createElement('div'); nameTag.className = 'peer-name'; nameTag.innerText = users[peerId] || 'Guest';
           div.appendChild(videoEl); div.appendChild(nameTag); peerVideosContainer.appendChild(div);
         }
-        
-        if (videoEl.srcObject !== event.streams[0]) {
-          videoEl.srcObject = event.streams[0];
-          videoEl.play().catch(e => console.log("Autoplay prevented", e));
-        }
+        videoEl.srcObject = event.streams[0];
+        videoEl.play().catch(e => console.log("Autoplay prevented", e));
       };
       
-      pc.onicecandidate = (event) => { 
-        if (event.candidate) socket.emit('signal', { to: peerId, signal: { candidate: event.candidate } }); 
-      };
-
-      pc.oniceconnectionstatechange = () => {
-          console.log(`ICE State: ${pc.iceConnectionState}`);
-      };
-      
+      pc.onicecandidate = (event) => { if (event.candidate) socket.emit('signal', { to: peerId, signal: { candidate: event.candidate } }); };
       return pc;
     }
   </script>
