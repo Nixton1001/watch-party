@@ -47,4 +47,54 @@
     .vertical-bar { position: absolute; right: 330px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 50; transition: right 0.3s ease; }
     .vertical-bar.sidebar-hidden { right: 10px; }
 
-    .icon-btn { width:
+    .icon-btn { width: 50px; height: 50px; border-radius: 50%; background: rgba(10, 10, 10, 0.6); border: 1px solid rgba(0, 243, 255, 0.3); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; color: white; backdrop-filter: blur(5px); }
+    .icon-btn:hover { border-color: var(--primary); box-shadow: 0 0 10px var(--primary); }
+    .icon-btn.active { background: var(--primary); color: black; border-color: var(--primary); box-shadow: 0 0 15px var(--primary); }
+    .icon-btn.danger { background: #ff4757; border-color: #ff4757; }
+
+    .peer-video { position: absolute; bottom: 80px; right: 20px; width: 150px; height: 100px; background: #000; border: 1px solid var(--secondary); border-radius: 8px; overflow: hidden; z-index: 40; }
+    .peer-video video { width: 100%; height: 100%; object-fit: cover; }
+    .peer-name { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); font-size: 10px; padding: 2px 5px; color: white; }
+
+    .chat-message { word-wrap: break-word; word-break: break-word; margin-bottom: 8px; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border-left: 2px solid var(--primary); animation: slideUp 0.3s ease; }
+
+    .room-code-big { font-family: 'Orbitron', sans-serif; font-size: 2rem; font-weight: 900; letter-spacing: 6px; color: var(--primary); text-shadow: 0 0 10px var(--primary); cursor: pointer; transition: all 0.3s; }
+    .room-code-big:hover { color: white; text-shadow: 0 0 20px white; }
+
+    @media (max-width: 768px) {
+      #sidebar { position: fixed; right: 0; top: 0; bottom: 0; width: 85%; max-width: 320px; z-index: 70; transform: translateX(100%); display: flex; }
+      #sidebar.open { transform: translateX(0); }
+      #sidebar.hidden { display: flex; transform: translateX(100%); }
+      .vertical-bar { position: fixed; bottom: 0; left: 0; right: 0; top: auto; transform: none; flex-direction: row; justify-content: center; gap: 15px; background: rgba(5, 5, 5, 0.95); padding: 10px 0; border-top: 1px solid rgba(0, 243, 255, 0.2); z-index: 60; right: auto; }
+      .video-wrapper { height: calc(100vh - 70px); }
+      .peer-video { bottom: 80px; width: 100px; height: 70px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- JOIN OVERLAY -->
+  <div id="join-overlay">
+    <div class="join-text" id="join-message-text"></div>
+    <div class="mt-4 text-gray-400 animate-pulse">Loading...</div>
+  </div>
+
+  <!-- PAGE 1: LOBBY (Shows if no parameters are present) -->
+  <div id="lobbyPage" class="hidden h-screen w-screen flex items-center justify-center">
+    <div class="glass p-8 rounded-2xl w-full max-w-md space-y-6 border-l-4 border-l-[var(--primary)] relative overflow-hidden">
+      <div class="absolute top-0 right-0 w-20 h-20 border-t-2 border-r-2 border-[var(--primary)] opacity-50 rounded-tr-2xl"></div>
+      
+      <div class="text-center">
+        <h1 class="text-4xl font-bold mb-2" style="font-family: 'Orbitron'">WATCH PARTY</h1>
+        <p class="text-gray-500 text-sm tracking-widest">SYNC & STREAM</p>
+      </div>
+      <div class="space-y-4">
+        <input type="text" id="usernameInput" placeholder="Identify Yourself" class="w-full input-futuristic rounded-lg p-3 text-lg">
+        
+        <div class="flex gap-2">
+          <button onclick="handleCreate()" class="flex-1 neon-btn py-3 rounded-lg text-lg">Create Room</button>
+          <button onclick="showJoinInput()" class="flex-1 outline-btn font-bold py-3 rounded-lg">Join Room</button>
+        </div>
+        <div id="joinContainer" class="hidden space-y-2">
+          <input type="text" id="roomCodeInput" placeholder="Enter Code" class="w-full input-futuristic rounded-lg p-3 uppercase tracking-widest text-center">
+          <
