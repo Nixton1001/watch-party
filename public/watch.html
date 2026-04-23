@@ -33,7 +33,6 @@
     #join-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; flex-direction: column; }
     .join-text { font-family: 'Orbitron', sans-serif; font-size: 2.5rem; font-weight: bold; text-align: center; padding: 20px; animation: slideUp 0.5s ease; }
 
-    /* WELCOME OVERLAY STYLES */
     #welcome-overlay { position: fixed; inset: 0; z-index: 20000; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; }
     .welcome-box { background: rgba(10, 10, 10, 0.9); border: 2px solid var(--primary); padding: 40px; border-radius: 20px; text-align: center; max-width: 500px; animation: zoomIn 0.6s ease forwards; animation: glowPulse 2s infinite; }
     .welcome-text { font-family: 'Rajdhani', sans-serif; font-size: 1.8rem; color: white; margin-top: 10px; }
@@ -42,7 +41,7 @@
     
     video { background: black; }
     
-    .video-controls { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 20px 10px 10px; opacity: 0; transition: opacity 0.3s; }
+    .video-controls { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 60px 20px 20px; opacity: 0; transition: opacity 0.3s; }
     .video-wrapper:hover .video-controls, .video-wrapper:active .video-controls { opacity: 1; }
     
     .control-btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; cursor: pointer; transition: all 0.2s; border-radius: 8px; }
@@ -64,6 +63,13 @@
     .room-code-big { font-family: 'Orbitron', sans-serif; font-size: 2rem; font-weight: 900; letter-spacing: 6px; color: var(--primary); text-shadow: 0 0 10px var(--primary); cursor: pointer; transition: all 0.3s; }
     .room-code-big:hover { color: white; text-shadow: 0 0 20px white; }
 
+    /* Progress Bar Styles */
+    .progress-container { width: 100%; height: 5px; background: rgba(255,255,255,0.2); border-radius: 5px; cursor: pointer; position: relative; margin-bottom: 15px; transition: height 0.2s; }
+    .progress-container:hover { height: 8px; }
+    .progress-bar { height: 100%; background: linear-gradient(90deg, var(--primary), var(--secondary)); border-radius: 5px; width: 0%; position: relative; }
+    .progress-handle { position: absolute; right: -6px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px; background: white; border-radius: 50%; box-shadow: 0 0 5px var(--primary); opacity: 0; transition: opacity 0.2s; }
+    .progress-container:hover .progress-handle { opacity: 1; }
+
     @media (max-width: 768px) {
       #sidebar { position: fixed; right: 0; top: 0; bottom: 0; width: 85%; max-width: 320px; z-index: 70; transform: translateX(100%); display: flex; }
       #sidebar.open { transform: translateX(0); }
@@ -75,7 +81,6 @@
 </head>
 <body>
 
-  <!-- WELCOME MESSAGE OVERLAY -->
   <div id="welcome-overlay">
     <div class="welcome-box">
       <div class="text-xs text-[var(--primary)] uppercase tracking-widest">Message from Host</div>
@@ -84,24 +89,20 @@
     </div>
   </div>
 
-  <!-- JOIN OVERLAY -->
   <div id="join-overlay">
     <div class="join-text" id="join-message-text"></div>
     <div class="mt-4 text-gray-400 animate-pulse">Loading...</div>
   </div>
 
-  <!-- PAGE 1: LOBBY -->
   <div id="lobbyPage" class="hidden h-screen w-screen flex items-center justify-center">
     <div class="glass p-8 rounded-2xl w-full max-w-md space-y-6 border-l-4 border-l-[var(--primary)] relative overflow-hidden">
       <div class="absolute top-0 right-0 w-20 h-20 border-t-2 border-r-2 border-[var(--primary)] opacity-50 rounded-tr-2xl"></div>
-      
       <div class="text-center">
         <h1 class="text-4xl font-bold mb-2" style="font-family: 'Orbitron'">WATCH PARTY</h1>
         <p class="text-gray-500 text-sm tracking-widest">SYNC & STREAM</p>
       </div>
       <div class="space-y-4">
         <input type="text" id="usernameInput" placeholder="Identify Yourself" class="w-full input-futuristic rounded-lg p-3 text-lg">
-        
         <div class="flex gap-2">
           <button onclick="handleCreate()" class="flex-1 neon-btn py-3 rounded-lg text-lg">Create Room</button>
           <button onclick="showJoinInput()" class="flex-1 outline-btn font-bold py-3 rounded-lg">Join Room</button>
@@ -115,33 +116,38 @@
     </div>
   </div>
 
-  <!-- PAGE 2: WATCH ROOM -->
   <div id="watchRoom" class="hidden h-screen w-screen flex relative">
-    
-    <!-- Video Player -->
     <div class="flex-1 flex flex-col bg-black relative video-wrapper">
       <video id="mainVideo" class="w-full h-full" playsinline></video>
-      
       <div id="mobilePlayOverlay" onclick="forcePlay()"><button class="px-6 py-3 neon-btn rounded-lg font-bold">Tap to Play Video</button></div>
-
-      <div class="video-controls flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <button id="playPauseBtn" onclick="togglePlayPause()" class="control-btn p-2 rounded-lg">
-            <svg id="playIcon" class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
-            <svg id="pauseIcon" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-          </button>
-          <span id="timeDisplay" class="text-sm font-mono text-gray-300">0:00 / 0:00</span>
+      
+      <div class="video-controls flex flex-col justify-end">
+        
+        <!-- Progress Bar (Seek Bar) -->
+        <div id="progressContainer" class="progress-container">
+          <div id="progressBar" class="progress-bar">
+            <div class="progress-handle"></div>
+          </div>
         </div>
-        <div class="flex items-center gap-2">
-          <button onclick="requestSync()" class="control-btn p-2 rounded-lg text-[var(--primary)] hover:bg-[var(--primary)] hover:text-black">Sync</button>
-          <button onclick="toggleFullscreen()" class="control-btn p-2 rounded-lg">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-          </button>
+
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <button id="playPauseBtn" onclick="togglePlayPause()" class="control-btn p-2 rounded-lg">
+              <svg id="playIcon" class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+              <svg id="pauseIcon" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+            <span id="timeDisplay" class="text-sm font-mono text-gray-300">0:00 / 0:00</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="requestSync()" class="control-btn p-2 rounded-lg text-[var(--primary)] hover:bg-[var(--primary)] hover:text-black">Sync</button>
+            <button onclick="toggleFullscreen()" class="control-btn p-2 rounded-lg">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Sidebar -->
     <div id="sidebar" class="glass">
       <div id="sourceControls" class="p-4 border-b border-white/10 space-y-3">
         <h3 class="text-xs text-gray-400 uppercase tracking-wider">Host Settings</h3>
@@ -150,10 +156,13 @@
           <input type="text" id="videoLinkInput" placeholder="Video Link" class="flex-1 input-futuristic text-sm p-2 rounded">
           <button onclick="loadLink()" class="neon-btn px-3 rounded text-sm">Load</button>
         </div>
-        <label class="block w-full text-center outline-btn p-2 rounded cursor-pointer text-sm">
-          <input type="file" id="videoUpload" accept="video/*" onchange="uploadVideo(this)" class="hidden">
-          <span id="uploadLabel">Upload Video</span>
-        </label>
+        <div>
+          <label class="block w-full text-center outline-btn p-2 rounded cursor-pointer text-sm">
+            <input type="file" id="videoUpload" accept="video/*" onchange="uploadVideo(this)" class="hidden">
+            <span id="uploadLabel">Upload Video</span>
+          </label>
+          <p class="text-center text-gray-500 text-xs mt-1">Max file size: 1GB</p>
+        </div>
       </div>
       <div id="guestWaiting" class="hidden p-4 border-b border-white/10 text-center text-gray-400 text-sm">Waiting for Host...</div>
       
@@ -175,7 +184,6 @@
       </div>
     </div>
 
-    <!-- Vertical Bar -->
     <div id="verticalBar" class="vertical-bar sidebar-shown">
       <button onclick="toggleChat()" id="chatToggleBtn" class="icon-btn active" title="Chat">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
@@ -188,7 +196,6 @@
         <svg id="micOn" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
         <svg id="micOff" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
       </button>
-
       <button onclick="leaveRoom()" class="icon-btn danger" title="Leave">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z"/></svg>
       </button>
@@ -202,17 +209,17 @@
     const verticalBar = document.getElementById('verticalBar');
     const messagesContainer = document.getElementById('messagesContainer');
     const sourceControls = document.getElementById('sourceControls');
+    const progressBar = document.getElementById('progressBar');
+    const progressContainer = document.getElementById('progressContainer');
     
     let myStream, myName, isHost = false, isMicOn = false;
-    let myUid = localStorage.getItem('watchNightUid') || generateUID(); // Persistent ID
+    let myUid = localStorage.getItem('watchNightUid') || generateUID();
     localStorage.setItem('watchNightUid', myUid);
 
     const peers = {}; 
     const users = {};
 
-    // --- 1. INIT & URL PARAMS ---
     window.onload = async () => {
-      // Check for existing session in localStorage
       const savedSession = localStorage.getItem('watchNightSession');
       const urlParams = new URLSearchParams(window.location.search);
       const action = urlParams.get('action');
@@ -220,47 +227,30 @@
       const nameParam = urlParams.get('name');
 
       if (action === 'create' || (action === 'join' && roomParam)) {
-        // Priority 1: URL Params (Invitation link)
         myName = nameParam || 'User';
         await getMedia();
         if (action === 'create') socket.emit('create-room', { name: myName, uid: myUid });
         else socket.emit('join-room', { roomId: roomParam, name: myName, uid: myUid });
       } else if (savedSession) {
-        // Priority 2: Existing Session (Refresh/Reconnect)
         const session = JSON.parse(savedSession);
         myName = session.name;
         await getMedia();
-        // We use 'join-room' for both host and guest reconnects. 
-        // The server decides if they are host or guest based on UID.
         socket.emit('join-room', { roomId: session.roomId, name: session.name, uid: myUid });
       } else {
-        // Priority 3: New User
         document.getElementById('lobbyPage').classList.remove('hidden');
       }
     };
 
-    function generateUID() {
-      return 'xxxx-xxxx'.replace(/x/g, () => Math.floor(Math.random() * 16).toString(16));
-    }
+    function generateUID() { return 'xxxx-xxxx'.replace(/x/g, () => Math.floor(Math.random() * 16).toString(16)); }
+    function saveSession(roomId, name) { localStorage.setItem('watchNightSession', JSON.stringify({ roomId, name })); }
+    function clearSession() { localStorage.removeItem('watchNightSession'); }
 
-    // Save session whenever we create or successfully join a room
-    function saveSession(roomId, name) {
-      localStorage.setItem('watchNightSession', JSON.stringify({ roomId, name }));
-    }
-
-    function clearSession() {
-      localStorage.removeItem('watchNightSession');
-    }
-
-    // --- LOBBY FUNCTIONS ---
     function showJoinInput() { document.getElementById('joinContainer').classList.toggle('hidden'); }
-
     async function handleCreate() {
       myName = document.getElementById('usernameInput').value || 'Host';
       await getMedia();
       socket.emit('create-room', { name: myName, uid: myUid });
     }
-
     async function handleJoin() {
       myName = document.getElementById('usernameInput').value || 'Guest';
       const room = document.getElementById('roomCodeInput').value.toUpperCase();
@@ -269,7 +259,6 @@
       socket.emit('join-room', { roomId: room, name: myName, uid: myUid });
     }
 
-    // --- CORE FUNCTIONS ---
     function addChatMessage(name, msg, color = 'white') {
       const div = document.createElement('div');
       div.className = 'chat-message text-sm';
@@ -277,7 +266,6 @@
       messagesContainer.appendChild(div);
       document.getElementById('chatBox').scrollTop = 10000;
     }
-
     function copyCode() {
         const code = document.getElementById('displayRoomCodeChat').innerText;
         navigator.clipboard.writeText(code);
@@ -286,41 +274,27 @@
         el.innerText = "COPIED!";
         setTimeout(() => el.innerText = originalText, 1000);
     }
+    function closeWelcome() { document.getElementById('welcome-overlay').style.display = 'none'; }
 
-    function closeWelcome() {
-      document.getElementById('welcome-overlay').style.display = 'none';
-    }
-
-    // --- AUDIO ONLY MEDIA ---
     async function getMedia() {
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
         myStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
         isMicOn = true;
         updateMicUI();
-      } catch (e) {
-        console.error("Microphone access denied.", e);
-        myStream = null;
-      }
+      } catch (e) { console.error("Microphone access denied.", e); myStream = null; }
     }
     
     // --- SOCKET EVENTS ---
-    socket.on('room-created', (data) => { 
-      isHost = true; 
-      initRoom(data.roomId); 
-      saveSession(data.roomId, myName);
-    });
-    
+    socket.on('room-created', (data) => { isHost = true; initRoom(data.roomId); saveSession(data.roomId, myName); });
     socket.on('room-joined', (data) => { 
       isHost = false; 
       initRoom(data.roomId); 
       saveSession(data.roomId, myName);
-
       if(data.welcomeMsg && data.welcomeMsg.length > 0) {
         document.getElementById('welcome-text-content').innerText = data.welcomeMsg;
         document.getElementById('welcome-overlay').style.display = 'flex';
       }
-
       if(data.videoSrc && data.videoSrc.length > 0) {
         video.src = data.videoSrc;
         document.getElementById('guestWaiting').classList.add('hidden');
@@ -331,24 +305,21 @@
       socket.emit('request-state');
     });
 
-    socket.on('chat-message', (data) => addChatMessage(data.name, data.msg, '#00f3ff'));
-
-    socket.on('user-joined', (data) => {
-      addChatMessage('System', `${data.name} joined`, '#888');
-      createPeerConnection(data.id, true);
+    socket.on('error', (msg) => {
+      alert(msg);
+      if(msg.includes('not found')) { clearSession(); window.location.reload(); }
     });
 
+    socket.on('chat-message', (data) => addChatMessage(data.name, data.msg, '#00f3ff'));
+    socket.on('user-joined', (data) => { addChatMessage('System', `${data.name} joined`, '#888'); createPeerConnection(data.id, true); });
     socket.on('user-disconnected', (data) => {
       addChatMessage('System', `${data.name} left`, '#888');
-      if(peers[data.id]) {
-        peers[data.id].close();
-        delete peers[data.id];
-      }
+      if(peers[data.id]) { peers[data.id].close(); delete peers[data.id]; }
       const audioEl = document.getElementById(`audio-${data.id}`);
       if(audioEl) audioEl.remove();
     });
 
-    // --- WEBRTC SIGNALING ---
+    // --- WEBRTC ---
     socket.on('signal', async (data) => {
       if (!peers[data.from]) createPeerConnection(data.from, false);
       const pc = peers[data.from];
@@ -363,94 +334,80 @@
         } else if (data.signal.candidate) {
           await pc.addIceCandidate(new RTCIceCandidate(data.signal));
         }
-      } catch (err) { console.error('Error handling signal:', err); }
+      } catch (err) { console.error('Signal Error:', err); }
     });
 
-    // --- WEBRTC PEER CONNECTION ---
     function createPeerConnection(userId, isOfferer) {
       if (peers[userId]) return;
       const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
       peers[userId] = pc;
-
       if (myStream) myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
-
       pc.ontrack = (event) => {
         let remoteAudio = document.getElementById(`audio-${userId}`);
-        if (!remoteAudio) {
-          remoteAudio = document.createElement('audio');
-          remoteAudio.id = `audio-${userId}`;
-          remoteAudio.autoplay = true;
-          document.body.appendChild(remoteAudio);
-        }
+        if (!remoteAudio) { remoteAudio = document.createElement('audio'); remoteAudio.id = `audio-${userId}`; remoteAudio.autoplay = true; document.body.appendChild(remoteAudio); }
         if (remoteAudio.srcObject !== event.streams[0]) remoteAudio.srcObject = event.streams[0];
       };
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate) socket.emit('signal', { to: userId, signal: event.candidate });
-      };
-
+      pc.onicecandidate = (event) => { if (event.candidate) socket.emit('signal', { to: userId, signal: event.candidate }); };
       if (isOfferer) {
         pc.onnegotiationneeded = async () => {
-          try {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            socket.emit('signal', { to: userId, signal: offer });
-          } catch (err) { console.error('Error creating offer:', err); }
+          try { const offer = await pc.createOffer(); await pc.setLocalDescription(offer); socket.emit('signal', { to: userId, signal: offer }); } catch (err) { console.error(err); }
         };
       }
     }
 
-    // --- VIDEO SYNC & CONTROLS ---
+    // --- VIDEO SYNC & SEEK ---
     socket.on('sync-video', (data) => {
       if(!isHost) {
         if(data.type === 'play') { video.currentTime = data.time; video.play(); }
         else if(data.type === 'pause') { video.currentTime = data.time; video.pause(); }
-        else if(data.type === 'src') { 
-            video.src = data.src; 
-            document.getElementById('guestWaiting').classList.add('hidden');
-            video.play().catch(e => document.getElementById('mobilePlayOverlay').style.display = 'flex');
-        }
+        else if(data.type === 'seek') { video.currentTime = data.time; }
+        else if(data.type === 'src') { video.src = data.src; document.getElementById('guestWaiting').classList.add('hidden'); video.play().catch(e => document.getElementById('mobilePlayOverlay').style.display = 'flex'); }
       }
     });
-    
-    socket.on('error', (msg) => alert(msg));
     
     function initRoom(id) {
       document.getElementById('lobbyPage').classList.add('hidden');
       document.getElementById('watchRoom').classList.remove('hidden');
       document.getElementById('displayRoomCodeChat').innerText = id;
-      
       if (!isHost) document.getElementById('sourceControls').classList.add('hidden');
       else document.getElementById('guestWaiting').classList.add('hidden');
-      
-      if(window.innerWidth <= 768) {
-          sidebar.classList.remove('open');
-          sidebar.classList.add('hidden');
-      } else {
-          sidebar.classList.remove('hidden');
-          verticalBar.classList.remove('sidebar-hidden');
-      }
+      if(window.innerWidth <= 768) { sidebar.classList.remove('open'); sidebar.classList.add('hidden'); }
+      else { sidebar.classList.remove('hidden'); verticalBar.classList.remove('sidebar-hidden'); }
     }
-
-    function updateWelcomeMsg(msg) {
-      if(isHost) socket.emit('set-welcome-msg', { msg });
-    }
-    
-    function leaveRoom() { 
-      clearSession(); // Clear session on explicit leave
-      window.location.href = '/'; 
-    }
-    
+    function updateWelcomeMsg(msg) { if(isHost) socket.emit('set-welcome-msg', { msg }); }
+    function leaveRoom() { clearSession(); window.location.href = '/'; }
     function forcePlay() { video.play(); document.getElementById('mobilePlayOverlay').style.display = 'none'; }
-
     function togglePlayPause() { if(video.paused) video.play(); else video.pause(); }
     
+    // Update Progress Bar visually
+    video.addEventListener('timeupdate', () => {
+      const percent = (video.currentTime / video.duration) * 100;
+      progressBar.style.width = percent + '%';
+      // Update time display
+      const ct = Math.floor(video.currentTime);
+      const d = Math.floor(video.duration) || 0;
+      document.getElementById('timeDisplay').innerText = `${formatTime(ct)} / ${formatTime(d)}`;
+    });
+
+    // Host Seeking Logic
+    video.addEventListener('seeked', () => {
+      if(isHost) {
+        socket.emit('sync-video', { type: 'seek', time: video.currentTime });
+      }
+    });
+
+    // Click on Progress Bar to Seek
+    progressContainer.addEventListener('click', (e) => {
+      const rect = progressContainer.getBoundingClientRect();
+      const pos = (e.clientX - rect.left) / rect.width;
+      video.currentTime = pos * video.duration;
+    });
+
     video.onplay = () => { 
       document.getElementById('mobilePlayOverlay').style.display = 'none'; 
       updateIcons(); 
       if(isHost) socket.emit('sync-video', { type: 'play', time: video.currentTime }); 
     };
-    
     video.onpause = () => { 
       updateIcons(); 
       if(isHost) socket.emit('sync-video', { type: 'pause', time: video.currentTime }); 
@@ -460,102 +417,49 @@
       document.getElementById('playIcon').classList.toggle('hidden', !video.paused); 
       document.getElementById('pauseIcon').classList.toggle('hidden', video.paused); 
     }
-
-    setInterval(() => {
-      const ct = Math.floor(video.currentTime);
-      const d = Math.floor(video.duration) || 0;
-      document.getElementById('timeDisplay').innerText = `${formatTime(ct)} / ${formatTime(d)}`;
-    }, 1000);
-
-    function formatTime(s) {
-        const m = Math.floor(s / 60);
-        const sec = s % 60;
-        return `${m}:${sec.toString().padStart(2, '0')}`;
-    }
-
-    function toggleFullscreen() {
-        if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(err => console.log(err));
-        else document.exitFullscreen();
-    }
-
-    function hideSourceControls() {
-      if (!isHost) return;
-      sourceControls.classList.add('hidden');
-    }
+    
+    function formatTime(s) { const m = Math.floor(s / 60); const sec = s % 60; return `${m}:${sec.toString().padStart(2, '0')}`; }
+    
+    function toggleFullscreen() { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(err => console.log(err)); else document.exitFullscreen(); }
+    function hideSourceControls() { if (!isHost) return; sourceControls.classList.add('hidden'); }
 
     async function uploadVideo(input) {
         if (input.files && input.files[0]) {
             const file = input.files[0];
-            const formData = new FormData();
+            if (file.size > 1024 * 1024 * 1024) { alert("File is too large! Max size is 1GB."); input.value = ''; return; }
+            const formData = new FormData(); 
             formData.append('video', file);
-            const label = document.getElementById('uploadLabel');
+            const label = document.getElementById('uploadLabel'); 
             label.innerText = "Uploading...";
             try {
                 const response = await fetch('/upload', { method: 'POST', body: formData });
                 const data = await response.json();
-                if (data.filePath) {
-                    video.src = data.filePath;
-                    video.play();
-                    label.innerText = file.name;
-                    socket.emit('sync-video', { type: 'src', src: data.filePath });
+                if (!response.ok) throw new Error(data.error || 'Upload failed');
+                if (data.filePath) { 
+                    video.src = data.filePath; 
+                    video.play(); 
+                    label.innerText = file.name; 
+                    socket.emit('sync-video', { type: 'src', src: data.filePath }); 
                     hideSourceControls(); 
-                } else { alert('Upload failed'); label.innerText = "Upload Video"; }
-            } catch (err) { console.error(err); alert('Error uploading file'); label.innerText = "Upload Video"; }
+                } 
+            } catch (err) { 
+                console.error(err); alert('Error: ' + err.message); label.innerText = "Upload Video"; 
+            } finally { input.value = ''; }
         }
     }
-
     function loadLink() {
         const url = document.getElementById('videoLinkInput').value;
-        if(url) {
-            video.src = url;
-            video.play();
-            document.getElementById('uploadLabel').innerText = "External Source";
-            socket.emit('sync-video', { type: 'src', src: url });
-            hideSourceControls(); 
-        }
+        if(url) { video.src = url; video.play(); document.getElementById('uploadLabel').innerText = "External Source"; socket.emit('sync-video', { type: 'src', src: url }); hideSourceControls(); }
     }
-
     function requestSync() { if(!isHost) socket.emit('request-sync'); }
-
     function toggleChat() {
-        if (window.innerWidth <= 768) {
-            sidebar.classList.toggle('open');
-            sidebar.classList.remove('hidden');
-        } else {
-            sidebar.classList.toggle('hidden');
-            verticalBar.classList.toggle('sidebar-hidden', sidebar.classList.contains('hidden'));
-        }
+        if (window.innerWidth <= 768) { sidebar.classList.toggle('open'); sidebar.classList.remove('hidden'); }
+        else { sidebar.classList.toggle('hidden'); verticalBar.classList.toggle('sidebar-hidden', sidebar.classList.contains('hidden')); }
     }
-
-    function toggleSource() {
-        if (window.innerWidth <= 768 && !sidebar.classList.contains('open')) {
-             sidebar.classList.add('open');
-             sidebar.classList.remove('hidden');
-        } else {
-             sourceControls.classList.toggle('hidden');
-        }
-    }
-
-    function sendMessage() {
-        const input = document.getElementById('chatInput');
-        const msg = input.value;
-        if(!msg.trim()) return;
-        socket.emit('chat-message', { name: myName, msg });
-        addChatMessage(myName, msg, 'white');
-        input.value = '';
-    }
-
-    function toggleMic() {
-        isMicOn = !isMicOn;
-        if(myStream) myStream.getAudioTracks()[0].enabled = isMicOn;
-        updateMicUI();
-    }
-
-    function updateMicUI() {
-        document.getElementById('micOn').classList.toggle('hidden', !isMicOn);
-        document.getElementById('micOff').classList.toggle('hidden', isMicOn);
-        document.getElementById('micBtn').classList.toggle('active', isMicOn);
-    }
+    function toggleSource() { if (window.innerWidth <= 768 && !sidebar.classList.contains('open')) { sidebar.classList.add('open'); sidebar.classList.remove('hidden'); } else { sourceControls.classList.toggle('hidden'); } }
+    function sendMessage() { const input = document.getElementById('chatInput'); const msg = input.value; if(!msg.trim()) return; socket.emit('chat-message', { name: myName, msg }); addChatMessage(myName, msg, 'white'); input.value = ''; }
+    function toggleMic() { isMicOn = !isMicOn; if(myStream) myStream.getAudioTracks()[0].enabled = isMicOn; updateMicUI(); }
+    function updateMicUI() { document.getElementById('micOn').classList.toggle('hidden', !isMicOn); document.getElementById('micOff').classList.toggle('hidden', isMicOn); document.getElementById('micBtn').classList.toggle('active', isMicOn); }
   </script>
 </body>
 </html>
