@@ -77,7 +77,6 @@
     </div>
 
     <div id="sidebar" class="glass">
-      <!-- Host Only: Video Settings -->
       <div id="sourceControls" class="p-4 border-b border-white/10 space-y-3">
         <h3 class="text-xs text-gray-400 uppercase tracking-wider">Host: Set Video Source</h3>
         <div class="flex gap-2">
@@ -125,27 +124,31 @@
     const progressBar = document.getElementById('progressBar');
     const progressContainer = document.getElementById('progressContainer');
     
-    let myStream, myName, isHost = false, isMicOn = false;
-    let myUid = localStorage.getItem('watchNightUid') || Math.random().toString(36).substring(2, 10);
-    localStorage.setItem('watchNightUid', myUid);
+    let myStream, myName, myUid, isHost = false, isMicOn = false;
     const peers = {}; 
 
-    // --- INIT: Read URL strictly. No manual inputs. ---
-    const urlParams = new URLSearchParams(window.location.search);
-    const action = urlParams.get('action');
-    const roomParam = urlParams.get('room');
-    const nameParam = urlParams.get('name');
-
+    // --- AUTO CHECK IN ---
     window.onload = async () => {
-      if (!action || !roomParam) window.location.href = '/'; // FORCE back to index
+      // 1. Check Name
+      myName = localStorage.getItem('watchNightName');
+      myUid = localStorage.getItem('watchNightUid');
       
-      myName = nameParam || 'Guest';
-      document.getElementById('watchRoom').classList.remove('hidden');
-      
+      if(!myName) window.location.href = '/'; // Force back to index if no name
+
+      // 2. Init Media
       try {
         myStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
         isMicOn = true; updateMicUI();
       } catch (e) { console.log("Mic denied"); }
+
+      // 3. Handle Room Logic
+      const urlParams = new URLSearchParams(window.location.search);
+      const action = urlParams.get('action');
+      const roomParam = urlParams.get('room');
+
+      if (!action || !roomParam) window.location.href = '/';
+
+      document.getElementById('watchRoom').classList.remove('hidden');
       
       if (action === 'create') socket.emit('create-room', { name: myName, roomId: roomParam, uid: myUid });
       else socket.emit('join-room', { roomId: roomParam, name: myName, uid: myUid });
@@ -158,7 +161,7 @@
       if(data.welcomeMsg) { document.getElementById('welcome-text-content').innerText = data.welcomeMsg; document.getElementById('welcome-overlay').style.display = 'flex'; }
       if(data.videoSrc) { video.src = data.videoSrc; document.getElementById('guestWaiting').classList.add('hidden'); video.play().catch(e => document.getElementById('mobilePlayOverlay').style.display = 'flex'); }
       else document.getElementById('guestWaiting').classList.remove('hidden');
-      socket.emit('request-state');
+      socket.emit('request-sync'); // Fixed from 'request-state'
     });
     socket.on('error', (msg) => { alert(msg); window.location.href = '/'; });
 
