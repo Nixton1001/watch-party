@@ -125,13 +125,11 @@
       
       pc.onicecandidate = (e) => { if (e.candidate) socket.emit('signal', { to: userId, signal: e.candidate }); };
       
-      // Game rooms are small, so we can allow impromptu negotiation
       pc.onnegotiationneeded = async () => {
         try { const o = await pc.createOffer(); await pc.setLocalDescription(o); socket.emit('signal', { to: userId, signal: o }); } catch (e) {}
       };
     }
 
-    // Universal Signal Handler
     socket.on('signal', async (data) => {
       if (!peers[data.from]) createPeerConnection(data.from);
       const pc = peers[data.from];
@@ -148,16 +146,22 @@
     const urlParams = new URLSearchParams(window.location.search);
     const action = urlParams.get('action');
     const roomParam = urlParams.get('room');
-    const nameParam = urlParams.get('name');
     const gameParam = urlParams.get('game');
 
     window.onload = async () => {
-      if (!action || !roomParam) window.location.href = '/';
-      myData.name = nameParam || 'Player';
+      // 1. Check Name
+      const storedName = localStorage.getItem('watchNightName');
+      if(!storedName) return window.location.href = '/';
       
-      // Init Call First
+      myData.name = storedName;
+      myData.id = localStorage.getItem('watchNightUid') || Math.random().toString(36).substring(2, 10);
+      
+      // 2. Init Call
       await setupCall();
 
+      // 3. Join/Create Logic
+      if (!action || !roomParam) window.location.href = '/';
+      
       if (action === 'create') {
         myData.symbol = 'X';
         currentRoom = roomParam;
@@ -191,14 +195,10 @@
       if(data.gameType === 'tictactoe') initTTT(data);
       else initReflex();
       
-      // Call System: If opponent is already here (restart scenario), ensure connection is open
-      // WebRTC 'negotiationneeded' will handle offer creation automatically.
       if(!peers[opp.id]) createPeerConnection(opp.id);
     });
 
-    // Handle User Disconnected (Common for Call & Game)
-    socket.on('user-disconnected', (data) => closePeer(data.id)); // From Watch
-    socket.on('game-error', (msg) => { if(msg.includes('disconnected')) closePeer(myData.symbol === 'X' ? 'O' : 'X'); alert(msg); window.location.href='/'; });
+    socket.on('user-disconnected', (data) => closePeer(data.id)); // Standard disconnect
 
     // --- TIC TAC TOE ---
     let tttBoard = Array(9).fill(null);
