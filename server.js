@@ -75,6 +75,25 @@ const gameRooms = {};  // Game Zone Rooms
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
+  // ================== GLOBAL LOBBY SYSTEM ==================
+  socket.on('join-lobby', (data) => {
+    socket.join('global-lobby');
+    socket.lobbyData = data; // { name, uid }
+    
+    // Send list of other users to this user
+    const clients = [];
+    io.sockets.adapter.rooms.get('global-lobby')?.forEach(id => {
+      if(id !== socket.id) {
+        const s = io.sockets.sockets.get(id);
+        if(s && s.lobbyData) clients.push({ id: s.id, ...s.lobbyData });
+      }
+    });
+    socket.emit('lobby-users', clients);
+    
+    // Notify others
+    socket.to('global-lobby').emit('lobby-user-joined', { id: socket.id, ...data });
+  });
+
   // ================== WATCH PARTY LOGIC ==================
   socket.on('create-room', (data) => {
     const roomId = data.roomId || generateRoomId();
@@ -198,14 +217,17 @@ io.on('connection', (socket) => {
   });
 
   // ================== COMMON CALL SYSTEM (WebRTC Signaling) ==================
-  // Works for BOTH Watch and Game rooms. Simply relays SDP/ICE to target socket.
   socket.on('signal', (data) => {
-    // data.to = target socket ID, data.signal = SDP or ICE candidate
     io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
   });
 
   // ================== DISCONNECT ==================
   socket.on('disconnect', () => {
+    // Global Lobby Disconnect
+    if(socket.lobbyData) {
+      socket.to('global-lobby').emit('user-disconnected', socket.id);
+    }
+
     // Watch Cleanup
     if (socket.roomId && rooms[socket.roomId]) {
       socket.to(socket.roomId).emit('user-disconnected', { id: socket.id });
