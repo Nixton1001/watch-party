@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Watch-Night | Room</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --primary: #00f3ff; --secondary: #bc13fe; --bg: #050505; }
+    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow: hidden; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 3px; }
+    .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; }
+    .outline-btn { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: white; }
+    .outline-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(0, 243, 255, 0.1); }
+    .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; }
+    
+    /* Video CSS */
+    video { background: black; }
+    .video-controls { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 60px 20px 20px; opacity: 0; transition: opacity 0.3s; }
+    .video-wrapper:hover .video-controls { opacity: 1; }
+
+    /* Game CSS */
+    .ttt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 280px; height: 280px; }
+    .ttt-cell { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron'; font-size: 4rem; cursor: pointer; }
+    .ttt-cell.x { color: var(--primary); }
+    .ttt-cell.o { color: var(--secondary); }
+
+    /* Layout */
+    #main-content { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.3s; }
+    #sidebar { width: 320px; display: flex; flex-direction: column; border-left: 1px solid rgba(255,255,255,0.1); }
+    #sidebar.hidden { display: none; }
+    
+    /* Chat */
+    .chat-msg { margin-bottom: 8px; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border-left: 2px solid var(--primary); }
+
+    @media (max-width: 768px) {
+      #sidebar { position: fixed; right: 0; top: 0; bottom: 0; width: 85%; max-width: 320px; z-index: 70; transform: translateX(100%); display: flex; }
+      #sidebar.open { transform: translateX(0); }
+    }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+
+  <!-- Main Container -->
+  <div class="flex-1 flex relative">
+    
+    <!-- LEFT: Dynamic Content Area -->
+    <div id="main-content" class="bg-black relative video-wrapper">
+      
+      <!-- OVERLAY NAV (Host Controls) -->
+      <div id="hostControls" class="absolute top-4 left-4 z-50 flex gap-2 hidden">
+        <button onclick="setMode('lobby')" class="outline-btn px-4 py-2 rounded-lg text-xs">Lobby</button>
+        <button onclick="setMode('watch')" class="outline-btn px-4 py-2 rounded-lg text-xs">Watch</button>
+        <button onclick="setMode('game')" class="outline-btn px-4 py-2 rounded-lg text-xs">Game (TTT)</button>
+      </div>
+
+      <!-- CONTENT: LOBBY -->
+      <div id="view-lobby" class="flex flex-col items-center justify-center text-center p-6">
+        <div class="text-6xl mb-4">🚀</div>
+        <h1 class="text-4xl font-bold mb-2" style="font-family: 'Orbitron'">Lobby</h1>
+        <p class="text-gray-400 mb-6">Waiting for Host to start...</p>
+        <div class="room-code-big text-3xl tracking-widest text-[var(--primary)]" id="roomCodeDisplay">------</div>
+      </div>
+
+      <!-- CONTENT: WATCH -->
+      <div id="view-watch" class="hidden w-full h-full">
+        <video id="mainVideo" class="w-full h-full" playsinline></video>
+        <div class="video-controls flex flex-col justify-end">
+          <div class="flex items-center justify-between">
+             <div class="flex items-center gap-2">
+               <button onclick="togglePlayPause()" class="outline-btn p-2 rounded-lg text-sm">Play/Pause</button>
+               <button onclick="document.getElementById('fileInput').click()" class="outline-btn p-2 rounded-lg text-sm">Upload</button>
+               <input type="file" id="fileInput" class="hidden" accept="video/*" onchange="uploadVideo(this)">
+             </div>
+             <span class="text-xs text-gray-400">Host controls playback</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONTENT: GAME -->
+      <div id="view-game" class="hidden w-full h-full flex flex-col items-center justify-center p-4">
+        <div class="mb-4 text-center">
+          <span id="gameTurn" class="text-sm bg-black/50 px-3 py-1 rounded">Your Turn</span>
+        </div>
+        <div id="gameBoard" class="ttt-grid"></div>
+        <div class="mt-6 text-center">
+            <h3 class="text-xl font-bold text-[var(--primary)]">Score</h3>
+            <div class="flex gap-4 text-lg">
+                <span>X: <span id="scoreX">0</span></span>
+                <span>O: <span id="scoreO">0</span></span>
+            </div>
+        </div>
+        <button id="restartBtn" onclick="socket.emit('restart-game')" class="hidden neon-btn px-6 py-2 rounded-lg mt-4">Play Again</button>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: Persistent Sidebar (Chat & Voice) -->
+    <div id="sidebar" class="glass">
+      <!-- Header -->
+      <div class="p-4 border-b border-white/10 flex justify-between items-center">
+        <h3 class="font-bold text-[var(--primary)]">Room Users</h3>
+        <button onclick="toggleSidebar()" class="md:hidden outline-btn p-1 rounded">✕</button>
+      </div>
+      
+      <!-- Users List (Voice Status) -->
+      <div id="userList" class="p-2 border-b border-white/10 max-h-40 overflow-y-auto"></div>
+
+      <!-- Chat -->
+      <div id="chatBox" class="flex-1 overflow-y-auto p-4 space-y-2 flex flex-col"></div>
+      
+      <!-- Input -->
+      <div class="p-4 border-t border-white/10">
+        <div class="flex gap-2">
+          <input type="text" id="chatInput" placeholder="Message..." class="flex-1 input-futuristic text-sm p-2 rounded-full" onkeypress="if(event.key==='Enter')sendMessage()">
+          <button onclick="toggleMic()" id="micBtn" class="outline-btn p-2 rounded-full">🎤</button>
+          <button onclick="sendMessage()" class="neon-btn p-2 rounded-full">➤</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile Toggle -->
+    <button onclick="toggleSidebar()" class="absolute top-4 right-4 z-50 md:hidden outline-btn p-2 rounded-lg">💬</button>
+  </div>
+
+  <script>
+    const socket = io();
+    let myData = { name: '', uid: '', isHost: false, symbol: null };
+    let currentRoom = null;
+    
+    // --- WEBRTC GLOBAL ---
+    let myStream; let isMicOn = false; const peers = {};
+
+    async function initVoice() {
+      try {
+        myStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        isMicOn = true; updateMicUI();
+      } catch(e) { console.log("Mic denied"); }
+    }
+
+    function createPeerConnection(userId) {
+      if (peers[userId]) return;
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      peers[userId] = pc;
+      if (myStream) myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
+      
+      pc.ontrack = (e) => {
+        let a = document.getElementById(`audio-${userId}`);
+        if (!a) { a = document.createElement('audio'); a.id = `audio-${userId}`; a.autoplay = true; document.body.appendChild(a); }
+        a.srcObject = e.streams[0];
+      };
+      pc.onicecandidate = (e) => { if (e.candidate) socket.emit('signal', { to: userId, signal: e.candidate }); };
+      pc.onnegotiationneeded = async () => { 
+        try { const o = await pc.createOffer(); await pc.setLocalDescription(o); socket.emit('signal', { to: userId, signal: o }); } catch(e){} 
+      };
+    }
+
+    socket.on('signal', async (data) => {
+      if (!peers[data.from]) createPeerConnection(data.from);
+      const pc = peers[data.from];
+      try {
+        if (data.signal.type === 'offer') { await pc.setRemoteDescription(new RTCSessionDescription(data.signal)); const a = await pc.createAnswer(); await pc.setLocalDescription(a); socket.emit('signal', { to: data.from, signal: a }); }
+        else if (data.signal.type === 'answer') await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+        else if (data.signal.candidate) await pc.addIceCandidate(new RTCIceCandidate(data.signal));
+      } catch(e) {}
+    });
+
+    // --- INIT ---
+    window.onload = async () => {
+      // 1. Check Auth
+      myData.name = localStorage.getItem('watchNightName');
+      myData.uid = localStorage.getItem('watchNightUid');
+      if(!myData.name) window.location.href = '/';
+
+      // 2. Init Voice
+      await initVoice();
+
+      // 3. Get Room ID
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomId = urlParams.get('room');
+      if(!roomId) window.location.href = '/';
+
+      socket.emit('join-room', { name: myData.name, uid: myData.uid, roomId: roomId });
+    };
+
+    // --- ROOM LOGIC ---
+    socket.on('room-joined', (data) => {
+      myData.isHost = data.isHost;
+      currentRoom = data.roomState;
+      
+      if(myData.isHost) document.getElementById('hostControls').classList.remove('hidden');
+      document.getElementById('roomCodeDisplay').innerText = currentRoom.id;
+      
+      // Join existing WebRTC sessions
+      currentRoom.users.forEach(u => { if(u.id !== socket.id) createPeerConnection(u.id); });
+      updateUserList(currentRoom.users);
+      
+      // Set current mode
+      setLocalMode(currentRoom.mode, currentRoom);
+    });
+
+    socket.on('mode-changed', (data) => {
+      currentRoom = data.roomState;
+      setLocalMode(data.mode, currentRoom);
+    });
+
+    function setMode(mode) {
+      if(!myData.isHost) return;
+      socket.emit('set-mode', { mode: mode, gameType: 'tictactoe' }); // hardcoded ttt for now
+    }
+
+    function setLocalMode(mode, state) {
+      document.getElementById('view-lobby').classList.add('hidden');
+      document.getElementById('view-watch').classList.add('hidden');
+      document.getElementById('view-game').classList.add('hidden');
+      
+      if (mode === 'lobby') document.getElementById('view-lobby').classList.remove('hidden');
+      else if (mode === 'watch') {
+        document.getElementById('view-watch').classList.remove('hidden');
+        if(state.videoSrc) {
+          document.getElementById('mainVideo').src = state.videoSrc;
+          if(state.videoPlaying) document.getElementById('mainVideo').play();
+        }
+      }
+      else if (mode === 'game') {
+        document.getElementById('view-game').classList.remove('hidden');
+        const me = state.users.find(u => u.id === socket.id);
+        if(me) myData.symbol = me.symbol;
+        renderGame(state);
+      }
+    }
+
+    // --- WATCH LOGIC ---
+    const video = document.getElementById('mainVideo');
+    
+    // Host Sync Emitters
+    video.onplay = () => { if(myData.isHost) socket.emit('sync-video', { type: 'play', time: video.currentTime }); };
+    video.onpause = () => { if(myData.isHost) socket.emit('sync-video', { type: 'pause', time: video.currentTime }); };
+
+    socket.on('sync-video', (data) => {
+      if(myData.isHost) return;
+      if(data.type === 'src') { video.src = data.src; video.play(); }
+      if(data.type === 'play') { video.currentTime = data.time; video.play(); }
+      if(data.type === 'pause') { video.currentTime = data.time; video.pause(); }
+    });
+
+    async function uploadVideo(input) {
+      if(!input.files[0]) return;
+      const fd = new FormData();
+      fd.append('video', input.files[0]);
+      const r = await fetch('/upload', { method: 'POST', body: fd });
+      const d = await r.json();
+      video.src = d.filePath;
+      video.play();
+      socket.emit('sync-video', { type: 'src', src: d.filePath });
+    }
+
+    // --- GAME LOGIC ---
+    function renderGame(state) {
+      document.getElementById('scoreX').innerText = state.scores.X;
+      document.getElementById('scoreO').innerText = state.scores.O;
+      
+      const board = document.getElementById('gameBoard');
+      board.innerHTML = '';
+      const myTurn = state.turn === myData.symbol;
+      
+      // Determine if game over
+      const isGameOver = (state.line || state.draw);
+      document.getElementById('restartBtn').classList.toggle('hidden', !isGameOver || !myData.isHost);
+      document.getElementById('gameTurn').innerText = isGameOver ? "Game Over" : (myTurn ? "Your Turn" : "Opponent Turn");
+
+      state.board.forEach((cell, i) => {
+        const div = document.createElement('div');
+        div.className = `ttt-cell ${cell==='X'?'x':(cell==='O'?'o':'')}`;
+        div.innerText = cell || '';
+        if (!cell && myTurn && !isGameOver) {
+          div.onclick = () => socket.emit('game-move', { index: i });
+          div.style.cursor = 'pointer';
+        }
+        board.appendChild(div);
+      });
+    }
+
+    socket.on('game-update', (data) => {
+      currentRoom.board = data.board;
+      currentRoom.scores = data.scores;
+      renderGame(currentRoom);
+    });
+
+    // --- CHAT & UI ---
+    function updateUserList(users) {
+      const el = document.getElementById('userList');
+      el.innerHTML = '';
+      users.forEach(u => {
+        const div = document.createElement('div');
+        div.className = 'flex items-center gap-2 p-2 text-sm';
+        div.innerHTML = `<span class="w-2 h-2 rounded-full bg-green-500"></span> ${u.name} ${u.id === socket.id ? '(You)' : ''}`;
+        el.appendChild(div);
+      });
+    }
+
+    socket.on('user-joined', (user) => {
+      createPeerConnection(user.id);
+      currentRoom.users.push(user);
+      updateUserList(currentRoom.users);
+      addChatMessage('System', `${user.name} joined`, '#888');
+    });
+
+    socket.on('user-disconnected', (id) => {
+      if(peers[id]) { peers[id].close(); delete peers[id]; }
+      currentRoom.users = currentRoom.users.filter(u => u.id !== id);
+      updateUserList(currentRoom.users);
+    });
+
+    socket.on('chat-message', (data) => addChatMessage(data.name, data.msg, '#00f3ff'));
+
+    function sendMessage() {
+      const i = document.getElementById('chatInput');
+      if(i.value.trim()) {
+        socket.emit('chat-message', { name: myData.name, msg: i.value });
+        addChatMessage(myData.name, i.value, 'white');
+        i.value = '';
+      }
+    }
+
+    function addChatMessage(n, m, c) {
+      const d = document.createElement('div');
+      d.className = 'chat-msg text-sm';
+      d.innerHTML = `<b style="color:${c}">${n}:</b> ${m}`;
+      document.getElementById('chatBox').appendChild(d);
+      document.getElementById('chatBox').scrollTop = 10000;
+    }
+
+    function toggleMic() {
+      isMicOn = !isMicOn;
+      if(myStream) myStream.getAudioTracks()[0].enabled = isMicOn;
+      updateMicUI();
+    }
+    function updateMicUI() { document.getElementById('micBtn').innerText = isMicOn ? '🎤' : '🔇'; document.getElementById('micBtn').classList.toggle('neon-btn', isMicOn); }
+    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+    function togglePlayPause() { if(video.paused) video.play(); else video.pause(); }
+  </script>
+</body>
+</html>
