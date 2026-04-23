@@ -45,8 +45,10 @@ io.on('connection', (socket) => {
     const roomId = generateRoomId();
     rooms[roomId] = {
       host: socket.id,
+      hostUid: data.uid, // Store the unique ID of the host
       videoSrc: '',
-      users: [{ id: socket.id, name: data.name }]
+      welcomeMsg: '',
+      users: [{ id: socket.id, uid: data.uid, name: data.name }]
     };
     socket.join(roomId);
     socket.roomId = roomId;
@@ -60,19 +62,57 @@ io.on('connection', (socket) => {
     
     socket.roomId = data.roomId;
     
-    // Notify existing users to prepare for peer connection
+    // Check if this user is the HOST reconnecting
+    if (room.hostUid === data.uid) {
+      console.log(`Host reconnected to ${data.roomId}`);
+      room.host = socket.id; // Update the socket ID
+      socket.join(data.roomId);
+      
+      // Find and update user entry
+      const userIndex = room.users.findIndex(u => u.uid === data.uid);
+      if (userIndex > -1) room.users[userIndex].id = socket.id;
+      else room.users.push({ id: socket.id, uid: data.uid, name: data.name });
+
+      // Emit 'room-created' again to restore host UI
+      return socket.emit('room-created', { roomId: data.roomId });
+    }
+
+    // Check if this user is a GUEST reconnecting
+    const existingUser = room.users.find(u => u.uid === data.uid);
+    if (existingUser) {
+      console.log(`Guest reconnected to ${data.roomId}`);
+      existingUser.id = socket.id; // Update socket ID
+      socket.join(data.roomId);
+      
+      // Send current state
+      socket.emit('room-joined', { 
+        roomId: data.roomId, 
+        videoSrc: room.videoSrc,
+        welcomeMsg: room.welcomeMsg
+      });
+      return;
+    }
+
+    // New Guest Logic
     socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
-    
-    room.users.push({ id: socket.id, name: data.name });
+    room.users.push({ id: socket.id, uid: data.uid, name: data.name });
     socket.join(data.roomId);
     
     socket.emit('room-joined', { 
       roomId: data.roomId, 
-      videoSrc: room.videoSrc 
+      videoSrc: room.videoSrc,
+      welcomeMsg: room.welcomeMsg
     });
   });
 
-  // WebRTC Signaling (Audio)
+  // Save Welcome Message
+  socket.on('set-welcome-msg', (data) => {
+    if (socket.roomId && rooms[socket.roomId]) {
+      rooms[socket.roomId].welcomeMsg = data.msg;
+    }
+  });
+
+  // WebRTC Signaling
   socket.on('signal', (data) => {
     io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
   });
@@ -81,12 +121,7 @@ io.on('connection', (socket) => {
   socket.on('sync-video', (data) => {
     const roomId = socket.roomId;
     if (!roomId || !rooms[roomId]) return;
-
-    // Save source changes to room state
-    if (data.type === 'src' && data.src) {
-      rooms[roomId].videoSrc = data.src;
-    }
-    
+    if (data.type === 'src' && data.src) rooms[roomId].videoSrc = data.src;
     socket.broadcast.to(roomId).emit('sync-video', data);
   });
 
@@ -111,13 +146,14 @@ io.on('connection', (socket) => {
     const roomId = socket.roomId;
     if (roomId && rooms[roomId]) {
       const room = rooms[roomId];
-      room.users = room.users.filter(u => u.id !== socket.id);
-      socket.to(roomId).emit('user-disconnected', { id: socket.id });
       
-      if (room.users.length === 0) {
-        delete rooms[roomId];
-        console.log(`Room ${roomId} deleted (empty)`);
-      }
+      // Note: We do NOT remove the user from the array immediately on disconnect.
+      // This allows them to refresh and rejoin with the same UID.
+      // We only remove the room if it becomes truly empty after a delay (optional).
+      // For this fix, we'll keep the room alive as long as possible.
+      
+      // Just notify others this specific socket is gone (for audio cleanup)
+      socket.to(roomId).emit('user-disconnected', { id: socket.id });
     }
   });
 });
