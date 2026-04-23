@@ -17,27 +17,18 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
 
-const upload = multer({ 
-  storage: storage,
-  limits: { fileSize: 1024 * 1024 * 1024 } // 1GB
-});
-
+const upload = multer({ storage: storage, limits: { fileSize: 1024 * 1024 * 1024 } });
 app.use(express.static('public'));
 
 // --- ROUTES ---
 app.get('/', (req, res) => res.sendFile(__dirname + '/public/index.html'));
-app.get('/watch.html', (req, res) => res.sendFile(__dirname + '/public/watch.html'));
-app.get('/game.html', (req, res) => res.sendFile(__dirname + '/public/game.html'));
-
+app.get('/room', (req, res) => res.sendFile(__dirname + '/public/room.html')); // Single Common Room
 app.post('/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
   res.json({ filePath: `/stream/${req.file.filename}` });
 });
-
-// --- STREAMING ROUTE ---
 app.get('/stream/:filename', (req, res) => {
-  const filename = req.params.filename;
-  const filePath = path.join(__dirname, 'uploads', filename);
+  const filePath = path.join(__dirname, 'uploads', req.params.filename);
   if (!fs.existsSync(filePath)) return res.status(404).send('File not found');
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
@@ -46,291 +37,156 @@ app.get('/stream/:filename', (req, res) => {
     const parts = range.replace(/bytes=/, "").split("-");
     const start = parseInt(parts[0], 10);
     const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-    const chunksize = (end - start) + 1;
     const file = fs.createReadStream(filePath, { start, end });
-    const head = { 'Content-Range': `bytes ${start}-${end}/${fileSize}`, 'Accept-Ranges': 'bytes', 'Content-Length': chunksize, 'Content-Type': 'video/mp4' };
-    res.writeHead(206, head);
+    res.writeHead(206, { 'Content-Range': `bytes ${start}-${end}/${fileSize}`, 'Accept-Ranges': 'bytes', 'Content-Length': (end - start) + 1, 'Content-Type': 'video/mp4' });
     file.pipe(res);
   } else {
-    const head = { 'Content-Length': fileSize, 'Content-Type': 'video/mp4' };
-    res.writeHead(200, head);
+    res.writeHead(200, { 'Content-Length': fileSize, 'Content-Type': 'video/mp4' });
     fs.createReadStream(filePath).pipe(res);
   }
 });
 
-// --- ERROR HANDLING ---
-app.use((err, req, res, next) => {
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File size exceeds 1GB limit.' });
-    return res.status(400).json({ error: err.message });
-  }
-  next(err);
-});
-
 // --- IN-MEMORY STORAGE ---
-const rooms = {};      // Watch Party Rooms
-const gameRooms = {};  // Game Zone Rooms
+const rooms = {}; // Master Room Object
 
 // --- SOCKET LOGIC ---
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // ================== GLOBAL LOBBY SYSTEM ==================
-  // Used for the "Common Audio Call" on index.html
-  socket.on('join-lobby', (data) => {
-    socket.join('global-lobby');
-    socket.lobbyData = data; // { name, uid }
-    
-    // Send list of other users in the lobby to this user
-    const clients = [];
-    io.sockets.adapter.rooms.get('global-lobby')?.forEach(id => {
-      if(id !== socket.id) {
-        const s = io.sockets.sockets.get(id);
-        if(s && s.lobbyData) clients.push({ id: s.id, ...s.lobbyData });
-      }
-    });
-    socket.emit('lobby-users', clients);
-    
-    // Notify others that a new user joined
-    socket.to('global-lobby').emit('lobby-user-joined', { id: socket.id, ...data });
-  });
-
-  // ================== WATCH PARTY LOGIC ==================
-  socket.on('create-room', (data) => {
-    const roomId = data.roomId || generateRoomId();
-    if (rooms[roomId]) return socket.emit('error', 'Room ID collision.');
-    rooms[roomId] = { 
-      host: socket.id, 
-      hostUid: data.uid, 
-      videoSrc: '', 
-      welcomeMsg: '', 
-      users: [{ id: socket.id, uid: data.uid, name: data.name }], 
-      timeout: null 
-    };
-    socket.join(roomId); 
-    socket.roomId = roomId;
-    socket.emit('room-created', { roomId });
-  });
-
+  // 1. JOIN UNIFIED ROOM
   socket.on('join-room', (data) => {
-    const room = rooms[data.roomId];
-    if (!room) return socket.emit('error', 'Room not found');
-    socket.roomId = data.roomId;
-    if (room.timeout) { clearTimeout(room.timeout); room.timeout = null; }
-
-    // Host Reconnection Logic
-    if (room.hostUid === data.uid) {
-      room.host = socket.id;
-      const u = room.users.find(u => u.uid === data.uid);
-      if (u) u.id = socket.id; 
-      else room.users.push({ id: socket.id, uid: data.uid, name: data.name });
-      socket.join(data.roomId);
-      return socket.emit('room-created', { roomId: data.roomId });
-    }
-
-    // Regular User Logic
-    const existing = room.users.find(u => u.uid === data.uid);
-    if (existing) { 
-      existing.id = socket.id; 
-      socket.join(data.roomId); 
-      return socket.emit('room-joined', { roomId: data.roomId, videoSrc: room.videoSrc, welcomeMsg: room.welcomeMsg }); 
-    }
+    let room = rooms[data.roomId];
     
-    socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
-    room.users.push({ id: socket.id, uid: data.uid, name: data.name });
+    // Create if doesn't exist
+    if (!room) {
+      room = {
+        id: data.roomId,
+        host: socket.id,
+        mode: 'lobby', // lobby, watch, game
+        users: [],
+        // Watch Data
+        videoSrc: '', videoTime: 0, videoPlaying: false,
+        // Game Data
+        gameType: null, gameState: null, board: null, turn: null, scores: { X: 0, O: 0 }
+      };
+      rooms[data.roomId] = room;
+    }
+
+    // Add User
     socket.join(data.roomId);
-    socket.emit('room-joined', { roomId: data.roomId, videoSrc: room.videoSrc, welcomeMsg: room.welcomeMsg });
-  });
-
-  socket.on('set-welcome-msg', (data) => { 
-    if (socket.roomId && rooms[socket.roomId]) rooms[socket.roomId].welcomeMsg = data.msg; 
-  });
-  
-  // Watch Sync
-  socket.on('sync-video', (data) => { 
-    const r = socket.roomId; 
-    if (!r || !rooms[r]) return; 
-    if (data.type === 'src') rooms[r].videoSrc = data.src; 
-    socket.broadcast.to(r).emit('sync-video', data); 
-  });
-  
-  socket.on('request-sync', () => { 
-    if (socket.roomId && rooms[socket.roomId]) 
-      socket.to(rooms[socket.roomId].host).emit('get-state', { requester: socket.id }); 
-  });
-  
-  socket.on('send-state', (data) => { 
-    io.to(data.to).emit('sync-video', { type: 'seek', time: data.time }); 
-    if(data.playing) io.to(data.to).emit('sync-video', { type: 'play' }); 
-  });
-  
-  socket.on('chat-message', (data) => { 
-    if(socket.roomId) io.to(socket.roomId).emit('chat-message', data); 
-  });
-
-  // ================== GAME ZONE LOGIC ==================
-  socket.on('create-game-room', (data) => {
-    const roomId = data.roomId || generateRoomId();
-    if (gameRooms[roomId]) return socket.emit('game-error', 'Room ID collision.');
-    gameRooms[roomId] = {
-      players: [{ id: socket.id, name: data.name, symbol: 'X' }],
-      board: Array(9).fill(null), 
-      turn: 'X', 
-      gameState: 'waiting', 
-      gameType: data.gameType, 
-      reflexState: null,
-      scores: { X: 0, O: 0 }
-    };
-    socket.join(roomId); 
-    socket.gameRoomId = roomId;
-    socket.emit('game-room-created', { roomId, gameType: data.gameType });
-  });
-
-  socket.on('join-game-room', (data) => {
-    const room = gameRooms[data.roomId];
-    if (!room) return socket.emit('game-error', 'Room not found');
-    if (room.players.length >= 2) return socket.emit('game-error', 'Room is full');
+    socket.roomId = data.roomId;
     
-    room.players.push({ id: socket.id, name: data.name, symbol: 'O' });
-    socket.join(data.roomId); 
-    socket.gameRoomId = data.roomId;
-    socket.emit('game-room-joined', { roomId: data.roomId, gameType: room.gameType });
+    const user = { id: socket.id, name: data.name, uid: data.uid };
+    // If host rejoins (reconnect), update host ID
+    if (room.host === data.uid || room.users.length === 0) room.host = socket.id;
     
-    room.gameState = 'playing';
-    io.to(data.roomId).emit('game-start', { 
-      players: room.players, 
-      turn: room.turn, 
-      board: room.board, 
-      gameType: room.gameType, 
-      scores: room.scores 
+    room.users.push(user);
+
+    // Send current state to user
+    socket.emit('room-joined', { 
+      isHost: room.host === socket.id, 
+      roomState: room 
     });
+
+    // Notify others
+    socket.to(data.roomId).emit('user-joined', user);
   });
 
-  socket.on('ttt-move', (data) => {
-    const room = gameRooms[socket.gameRoomId];
-    if (!room || room.gameState !== 'playing') return;
-    const player = room.players.find(p => p.id === socket.id);
-    if (!player || room.turn !== player.symbol) return;
-
-    if (room.board[data.index] === null) {
-      room.board[data.index] = player.symbol;
-      const winnerLine = checkTTTWinner(room.board);
-      if (winnerLine) {
-        room.gameState = 'finished';
-        room.scores[room.board[winnerLine[0]]]++;
-        io.to(socket.gameRoomId).emit('ttt-update', { board: room.board, winner: player.id, line: winnerLine, scores: room.scores });
-      } else if (room.board.every(cell => cell !== null)) {
-        room.gameState = 'finished';
-        io.to(socket.gameRoomId).emit('ttt-update', { board: room.board, winner: 'draw', scores: room.scores });
-      } else {
-        room.turn = room.turn === 'X' ? 'O' : 'X';
-        io.to(socket.gameRoomId).emit('ttt-update', { board: room.board, turn: room.turn, scores: room.scores });
-      }
+  // 2. MODE SWITCHING (Host Only)
+  socket.on('set-mode', (data) => {
+    const room = rooms[socket.roomId];
+    if (!room || room.host !== socket.id) return;
+    
+    room.mode = data.mode;
+    if(data.gameType) room.gameType = data.gameType;
+    
+    // Reset Game State if switching to game
+    if (data.mode === 'game') {
+      room.board = Array(9).fill(null);
+      room.turn = 'X';
+      room.scores = { X: 0, O: 0 };
+      // Assign symbols: First player in list = X, Second = O
+      if(room.users[0]) room.users[0].symbol = 'X';
+      if(room.users[1]) room.users[1].symbol = 'O';
     }
+
+    io.to(socket.roomId).emit('mode-changed', { mode: room.mode, roomState: room });
   });
 
-  socket.on('restart-game', (data) => {
-    const room = gameRooms[socket.gameRoomId];
-    if (!room) return;
-    room.board = Array(9).fill(null); 
-    room.turn = 'X'; 
-    room.gameState = 'playing';
-    io.to(socket.gameRoomId).emit('game-start', { 
-      players: room.players, 
-      turn: room.turn, 
-      board: room.board, 
-      gameType: room.gameType, 
-      scores: room.scores 
-    });
-  });
-
-  // Reflex Logic
-  socket.on('start-reflex-round', () => {
-    const room = gameRooms[socket.gameRoomId];
-    if (!room || room.players.length < 2 || room.players[0].id !== socket.id) return;
-    io.to(socket.gameRoomId).emit('reflex-state', { status: 'waiting' });
-    const delay = (Math.random() * 3000) + 2000;
-    room.reflexState = { canTap: false, winner: null };
-    setTimeout(() => {
-      if (room.reflexState && !room.reflexState.winner) { 
-        room.reflexState.canTap = true; 
-        io.to(socket.gameRoomId).emit('reflex-state', { status: 'go' }); 
-      }
-    }, delay);
-  });
-
-  socket.on('reflex-tap', () => {
-    const room = gameRooms[socket.gameRoomId];
-    if (!room || !room.reflexState) return;
-    const player = room.players.find(p => p.id === socket.id);
-    if (!player) return;
-
-    if (!room.reflexState.canTap) {
-      // False Start
-      room.reflexState.winner = 'early';
-      const opponent = room.players.find(p => p.id !== socket.id);
-      room.scores[opponent.symbol]++;
-      io.to(socket.gameRoomId).emit('reflex-result', { loser: socket.id, winner: opponent.id, scores: room.scores });
-      room.reflexState = null; 
-      return;
-    }
-    if (!room.reflexState.winner) {
-      room.reflexState.winner = socket.id;
-      room.scores[player.symbol]++;
-      io.to(socket.gameRoomId).emit('reflex-result', { winner: socket.id, scores: room.scores });
-      room.reflexState = null;
-    }
-  });
-
-  // ================== COMMON CALL SYSTEM (WebRTC Signaling) ==================
-  // This works for Global Lobby, Watch Rooms, and Game Rooms
+  // 3. WEBRTC SIGNALING (Common)
   socket.on('signal', (data) => {
     io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
   });
 
-  // ================== DISCONNECT ==================
+  // 4. WATCH PARTY LOGIC
+  socket.on('sync-video', (data) => {
+    const room = rooms[socket.roomId];
+    if (!room) return;
+    if (data.type === 'src') room.videoSrc = data.src;
+    if (data.type === 'play') { room.videoPlaying = true; room.videoTime = data.time; }
+    if (data.type === 'pause') { room.videoPlaying = false; room.videoTime = data.time; }
+    if (data.type === 'seek') room.videoTime = data.time;
+    
+    socket.to(socket.roomId).emit('sync-video', data);
+  });
+
+  // 5. GAME LOGIC
+  socket.on('game-move', (data) => {
+    const room = rooms[socket.roomId];
+    if (!room || room.mode !== 'game') return;
+    
+    const user = room.users.find(u => u.id === socket.id);
+    if (!user || room.turn !== user.symbol) return;
+
+    // Update Board
+    room.board[data.index] = user.symbol;
+    
+    // Check Win
+    const winLine = checkWin(room.board);
+    if (winLine) {
+      room.scores[user.symbol]++;
+      io.to(socket.roomId).emit('game-update', { board: room.board, line: winLine, winner: user.symbol, scores: room.scores });
+    } else if (room.board.every(c => c !== null)) {
+      io.to(socket.roomId).emit('game-update', { board: room.board, draw: true, scores: room.scores });
+    } else {
+      room.turn = room.turn === 'X' ? 'O' : 'X';
+      io.to(socket.roomId).emit('game-update', { board: room.board, turn: room.turn, scores: room.scores });
+    }
+  });
+
+  socket.on('restart-game', () => {
+    const room = rooms[socket.roomId];
+    if (!room) return;
+    room.board = Array(9).fill(null);
+    room.turn = 'X';
+    io.to(socket.roomId).emit('game-update', { board: room.board, turn: room.turn, scores: room.scores });
+  });
+
+  // 6. CHAT
+  socket.on('chat-message', (data) => {
+    io.to(socket.roomId).emit('chat-message', data);
+  });
+
+  // 7. DISCONNECT
   socket.on('disconnect', () => {
-    // Global Lobby Disconnect
-    if(socket.lobbyData) {
-      socket.to('global-lobby').emit('user-disconnected', socket.id);
-    }
+    if (!socket.roomId || !rooms[socket.roomId]) return;
+    const room = rooms[socket.roomId];
+    
+    // Remove user
+    room.users = room.users.filter(u => u.id !== socket.id);
+    socket.to(socket.roomId).emit('user-disconnected', socket.id);
 
-    // Watch Party Cleanup
-    if (socket.roomId && rooms[socket.roomId]) {
-      socket.to(socket.roomId).emit('user-disconnected', { id: socket.id });
-      const clients = io.sockets.adapter.rooms.get(socket.roomId);
-      if (!clients || clients.size === 0) {
-        rooms[socket.roomId].timeout = setTimeout(() => {
-           if (!io.sockets.adapter.rooms.get(socket.roomId) && rooms[socket.roomId]) { 
-             delete rooms[socket.roomId]; 
-           }
-        }, 1000 * 60 * 2); // 2 minutes timeout
-      }
-    }
-
-    // Game Zone Cleanup
-    if (socket.gameRoomId && gameRooms[socket.gameRoomId]) {
-      io.to(socket.gameRoomId).emit('game-error', 'Opponent disconnected');
-      delete gameRooms[socket.gameRoomId];
+    // If room empty, delete after 2 mins
+    if (room.users.length === 0) {
+      setTimeout(() => { if (rooms[socket.roomId]?.users.length === 0) delete rooms[socket.roomId]; }, 1000 * 60 * 2);
     }
   });
 });
 
-// --- HELPERS ---
-function generateRoomId() { 
-  return Math.random().toString(36).substring(2, 8).toUpperCase(); 
-}
-
-function checkTTTWinner(b) {
-  const lines = [
-    [0,1,2],[3,4,5],[6,7,8], // Rows
-    [0,3,6],[1,4,7],[2,5,8], // Cols
-    [0,4,8],[2,4,6]          // Diagonals
-  ];
-  for (let l of lines) { 
-    const [a,b,c] = l; 
-    if (b[a] && b[a]===b[b] && b[a]===b[c]) return l; 
-  }
+// Helper
+function checkWin(b) {
+  const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+  for (let l of lines) { const [a,x,c] = l; if (b[a] && b[a]===b[x] && b[a]===b[c]) return l; }
   return null;
 }
 
