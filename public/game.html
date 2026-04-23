@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Watch-Night | Game Zone</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
   <style>
     :root { --primary: #00f3ff; --secondary: #bc13fe; --bg: #050505; }
@@ -12,340 +13,297 @@
     
     @keyframes fadeIn { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
     @keyframes glowPulse { 0% { box-shadow: 0 0 20px var(--primary); } 50% { box-shadow: 0 0 40px var(--primary), 0 0 60px var(--secondary); } 100% { box-shadow: 0 0 20px var(--primary); } }
-    @keyframes pop { 0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
 
     .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
     .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; border: none; }
     .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--primary); transform: translateY(-2px); }
     
-    .p1-color { color: #00f3ff; }
-    .p2-color { color: #bc13fe; }
+    .outline-btn { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: white; transition: all 0.3s; }
+    .outline-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(0, 243, 255, 0.05); }
 
-    .game-card { transition: all 0.3s; cursor: pointer; }
-    .game-card:hover { transform: scale(1.03); border-color: var(--primary); }
-    
+    .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; transition: all 0.3s; }
+    .input-futuristic:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 10px rgba(0, 243, 255, 0.2); }
+
     .anim-fade-in { animation: fadeIn 0.5s ease forwards; }
-
-    /* Tic Tac Toe Styles */
-    .ttt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 280px; height: 280px; }
-    .ttt-cell { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron', sans-serif; font-size: 4rem; cursor: pointer; transition: all 0.2s; }
-    .ttt-cell:hover { background: rgba(255,255,255,0.1); }
-    .ttt-cell.p1 { color: var(--primary); text-shadow: 0 0 20px var(--primary); }
-    .ttt-cell.p2 { color: var(--secondary); text-shadow: 0 0 20px var(--secondary); }
+    
+    /* Game Specific */
+    .ttt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 260px; height: 260px; }
+    .ttt-cell { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron', sans-serif; font-size: 3.5rem; transition: all 0.2s; }
+    .ttt-cell:hover { background: rgba(255,255,255,0.1); cursor: pointer; }
+    .ttt-cell.x { color: var(--primary); text-shadow: 0 0 20px var(--primary); }
+    .ttt-cell.o { color: var(--secondary); text-shadow: 0 0 20px var(--secondary); }
     .ttt-cell.win { animation: glowPulse 1s infinite; background: rgba(255,255,255,0.1); }
     
-    /* Reflex Duel Specific */
-    .reflex-zone { transition: background 0.1s; }
-    .reflex-active { background: rgba(0, 243, 255, 0.3) !important; }
+    .reflex-box { transition: background 0.2s; }
+    .reflex-go { background: rgba(0, 243, 255, 0.4) !important; border-color: white !important; }
     .reflex-wait { background: rgba(188, 19, 254, 0.1) !important; }
   </style>
 </head>
 <body class="h-screen w-screen flex flex-col">
 
-  <!-- HEADER / SCOREBOARD -->
-  <header id="scoreBoard" class="hidden glass p-3 border-b border-white/10 flex justify-between items-center z-50 relative">
-    <div class="flex items-center gap-2">
-      <div class="w-2 h-2 rounded-full bg-[var(--primary)]"></div>
-      <span id="p1NameDisplay" class="font-bold p1-color">P1</span>
-      <span id="p1ScoreDisplay" class="text-xl font-bold">0</span>
-    </div>
-    <button onclick="resetGame()" class="text-xs text-gray-500 hover:text-white uppercase tracking-widest">Exit</button>
-    <div class="flex items-center gap-2">
-      <span id="p2ScoreDisplay" class="text-xl font-bold">0</span>
-      <span id="p2NameDisplay" class="font-bold p2-color">P2</span>
-      <div class="w-2 h-2 rounded-full bg-[var(--secondary)]"></div>
-    </div>
-  </header>
-
-  <main class="flex-1 relative overflow-y-auto">
-    
-    <!-- SCREEN 1: LOBBY -->
-    <div id="lobbyScreen" class="h-full w-full flex flex-col items-center justify-center p-6">
-      <div class="glass p-8 rounded-2xl w-full max-w-md space-y-6 border-l-4 border-l-[var(--primary)] relative overflow-hidden anim-fade-in">
-        <div class="text-center">
-          <h1 class="text-4xl font-bold mb-2" style="font-family: 'Orbitron'">GAME ZONE</h1>
-          <p class="text-gray-500 text-sm">Enter Player Names</p>
-        </div>
+  <!-- LOBBY SCREEN -->
+  <div id="lobbyScreen" class="h-full w-full flex flex-col items-center justify-center p-6">
+    <div class="glass p-8 rounded-2xl w-full max-w-md space-y-6 border-l-4 border-l-[var(--primary)] relative overflow-hidden anim-fade-in">
+      <div class="text-center">
+        <h1 class="text-4xl font-bold mb-2" style="font-family: 'Orbitron'">GAME ZONE</h1>
+        <p class="text-gray-500 text-sm">Play with friends online</p>
+      </div>
+      
+      <div class="space-y-4">
+        <input type="text" id="usernameInput" placeholder="Enter Your Name" class="w-full input-futuristic rounded-lg p-3 text-lg">
         
-        <div class="space-y-4">
-          <div>
-            <label class="text-xs text-[var(--primary)] uppercase tracking-widest mb-1 block">Player 1 (X)</label>
-            <input type="text" id="p1Input" placeholder="Name" class="w-full bg-black/50 border border-white/10 rounded p-3 text-lg focus:outline-none focus:border-[var(--primary)]">
-          </div>
-          <div>
-            <label class="text-xs text-[var(--secondary)] uppercase tracking-widest mb-1 block">Player 2 (O)</label>
-            <input type="text" id="p2Input" placeholder="Name" class="w-full bg-black/50 border border-white/10 rounded p-3 text-lg focus:outline-none focus:border-[var(--secondary)]">
-          </div>
-          
-          <button onclick="startSession()" class="w-full neon-btn py-3 rounded-lg text-xl mt-4">START</button>
+        <div class="flex gap-2">
+          <button onclick="handleCreate()" class="flex-1 neon-btn py-3 rounded-lg text-lg">Create Room</button>
+          <button onclick="showJoinInput()" class="flex-1 outline-btn font-bold py-3 rounded-lg">Join Room</button>
         </div>
-        <a href="/" class="block text-center text-gray-500 hover:text-white text-xs mt-4">← Back to Hub</a>
-      </div>
-    </div>
-
-    <!-- SCREEN 2: GAME MENU -->
-    <div id="menuScreen" class="hidden h-full w-full flex flex-col items-center justify-center p-6">
-      <div class="text-center mb-8 anim-fade-in">
-        <h2 class="text-3xl font-bold" style="font-family: 'Orbitron'">SELECT GAME</h2>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl px-4">
-        <!-- Game 1: Tic Tac Toe -->
-        <div onclick="startGame('tictactoe')" class="game-card glass p-6 rounded-2xl border border-white/10 anim-fade-in" style="animation-delay: 0.1s">
-          <div class="flex justify-between items-start mb-4">
-            <div class="text-4xl">⭕</div>
-            <span class="text-xs bg-white/10 px-2 py-1 rounded">Classic</span>
-          </div>
-          <h3 class="text-xl font-bold">Tic Tac Toe</h3>
-          <p class="text-gray-400 mt-1 text-sm">Classic X and O battle for the grid.</p>
-        </div>
-
-        <!-- Game 2: Reflex Duel -->
-        <div onclick="startGame('reflex')" class="game-card glass p-6 rounded-2xl border border-white/10 anim-fade-in" style="animation-delay: 0.2s">
-          <div class="flex justify-between items-start mb-4">
-            <div class="text-4xl">⚡</div>
-            <span class="text-xs bg-white/10 px-2 py-1 rounded">Versus</span>
-          </div>
-          <h3 class="text-xl font-bold">Reflex Duel</h3>
-          <p class="text-gray-400 mt-1 text-sm">Test your reaction speed.</p>
+        <div id="joinContainer" class="hidden space-y-2">
+          <input type="text" id="roomCodeInput" placeholder="Enter Room Code" class="w-full input-futuristic rounded-lg p-3 uppercase tracking-widest text-center">
+          <button onclick="handleJoin()" class="w-full neon-btn py-3 rounded-lg text-lg">Connect</button>
         </div>
       </div>
+      <a href="/" class="block text-center text-gray-500 hover:text-white text-xs mt-4">← Back to Hub</a>
     </div>
+  </div>
 
-    <!-- SCREEN 3: GAME CONTAINER -->
-    <div id="gameScreen" class="hidden h-full w-full flex flex-col items-center justify-center p-4 relative">
-      <!-- Dynamic Content Injected Here -->
+  <!-- WAITING SCREEN -->
+  <div id="waitingScreen" class="hidden h-full w-full flex flex-col items-center justify-center p-6">
+    <div class="text-center anim-fade-in">
+      <h2 class="text-3xl font-bold mb-4" style="font-family: 'Orbitron'">Waiting for Opponent</h2>
+      <div class="w-16 h-16 border-4 border-t-[var(--primary)] border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mx-auto mb-6"></div>
+      <p class="text-gray-400 text-sm mb-2">Share this code:</p>
+      <div id="roomCodeDisplay" class="text-4xl font-bold tracking-widest text-[var(--primary)]" style="font-family: 'Orbitron'">------</div>
     </div>
+  </div>
 
-  </main>
+  <!-- GAME ARENA -->
+  <div id="gameArena" class="hidden h-full w-full flex flex-col">
+    <!-- Header -->
+    <header class="glass p-3 border-b border-white/10 flex justify-between items-center">
+      <div id="p1Info" class="flex items-center gap-2">
+        <span class="text-xs opacity-50">YOU</span>
+        <span id="myName" class="font-bold text-[var(--primary)]">Player</span>
+      </div>
+      <div class="text-center">
+        <span id="turnIndicator" class="text-xs bg-black/50 px-2 py-1 rounded">Waiting...</span>
+      </div>
+      <div id="p2Info" class="flex items-center gap-2">
+        <span id="oppName" class="font-bold text-[var(--secondary)]">Opponent</span>
+        <span class="text-xs opacity-50">ENEMY</span>
+      </div>
+    </header>
+
+    <!-- Game Content -->
+    <main id="gameContent" class="flex-1 flex flex-col items-center justify-center p-4">
+      <!-- Dynamic Game Content Injected Here -->
+    </main>
+    
+    <!-- Footer -->
+    <footer class="p-4 text-center">
+      <button onclick="leaveGame()" class="text-gray-500 hover:text-red-500 text-xs uppercase tracking-widest">Leave Room</button>
+    </footer>
+  </div>
 
   <script>
-    // --- STATE ---
-    let p1 = { name: 'Player 1', score: 0 };
-    let p2 = { name: 'Player 2', score: 0 };
-    let currentGame = null;
-    let reflexTimeout = null;
+    const socket = io();
+    let myData = { name: '', symbol: '', id: '' };
+    let currentRoom = null;
 
-    // --- CORE LOGIC ---
-    function startSession() {
-      p1.name = document.getElementById('p1Input').value || 'Player 1';
-      p2.name = document.getElementById('p2Input').value || 'Player 2';
-      
-      updateScoreDisplay();
-      
+    // --- LOBBY LOGIC ---
+    function showJoinInput() { document.getElementById('joinContainer').classList.toggle('hidden'); }
+
+    function handleCreate() {
+      const name = document.getElementById('usernameInput').value || 'Player';
+      myData.name = name;
+      socket.emit('create-game-room', { name });
+    }
+
+    function handleJoin() {
+      const name = document.getElementById('usernameInput').value || 'Player';
+      const roomId = document.getElementById('roomCodeInput').value.toUpperCase();
+      if(!roomId) return;
+      myData.name = name;
+      socket.emit('join-game-room', { roomId, name });
+    }
+
+    socket.on('game-room-created', (data) => {
+      currentRoom = data.roomId;
+      myData.symbol = 'X';
       document.getElementById('lobbyScreen').classList.add('hidden');
-      document.getElementById('scoreBoard').classList.remove('hidden');
-      document.getElementById('menuScreen').classList.remove('hidden');
-    }
+      document.getElementById('waitingScreen').classList.remove('hidden');
+      document.getElementById('roomCodeDisplay').innerText = data.roomId;
+    });
 
-    function updateScoreDisplay() {
-      document.getElementById('p1NameDisplay').innerText = p1.name;
-      document.getElementById('p2NameDisplay').innerText = p2.name;
-      document.getElementById('p1ScoreDisplay').innerText = p1.score;
-      document.getElementById('p2ScoreDisplay').innerText = p2.score;
-    }
+    socket.on('game-room-joined', (data) => {
+      currentRoom = data.roomId;
+      myData.symbol = 'O';
+    });
 
-    function addScore(player, points) {
-      if (player === 1) p1.score += points;
-      if (player === 2) p2.score += points;
-      updateScoreDisplay();
-    }
+    socket.on('game-error', (msg) => {
+      alert(msg);
+    });
 
-    function resetGame() {
-      clearTimeout(reflexTimeout);
-      currentGame = null;
-      document.getElementById('gameScreen').classList.add('hidden');
-      document.getElementById('menuScreen').classList.remove('hidden');
-      document.getElementById('gameScreen').innerHTML = '';
-    }
-
-    function startGame(game) {
-      document.getElementById('menuScreen').classList.add('hidden');
-      document.getElementById('gameScreen').classList.remove('hidden');
+    // --- GAME START ---
+    socket.on('game-start', (data) => {
+      document.getElementById('lobbyScreen').classList.add('hidden');
+      document.getElementById('waitingScreen').classList.add('hidden');
+      document.getElementById('gameArena').classList.remove('hidden');
       
-      if(game === 'tictactoe') initTicTacToe();
-      if(game === 'reflex') initReflex();
-    }
-
-    // --- GAME 1: TIC TAC TOE ---
-    let board = Array(9).fill(null);
-    let currentPlayer = 1; // 1 for P1 (X), 2 for P2 (O)
-    let gameActive = true;
-
-    const winPatterns = [
-      [0, 1, 2], [3, 4, 5], [6, 7, 8], // Rows
-      [0, 3, 6], [1, 4, 7], [2, 5, 8], // Cols
-      [0, 4, 8], [2, 4, 6]             // Diagonals
-    ];
-
-    function initTicTacToe() {
-      board = Array(9).fill(null);
-      currentPlayer = 1;
-      gameActive = true;
-      renderTTTBoard();
-    }
-
-    function renderTTTBoard() {
-      const container = document.getElementById('gameScreen');
-      const turnText = currentPlayer === 1 ? `${p1.name}'s Turn (X)` : `${p2.name}'s Turn (O)`;
-      const turnClass = currentPlayer === 1 ? 'p1-color' : 'p2-color';
-
-      let html = `
-        <div class="text-center anim-fade-in">
-          <h3 id="tttStatus" class="text-2xl font-bold mb-6 ${turnClass}">${turnText}</h3>
-          <div class="ttt-grid mb-6">
-      `;
-
-      board.forEach((cell, index) => {
-        const cellClass = cell === 1 ? 'p1' : (cell === 2 ? 'p2' : '');
-        const symbol = cell === 1 ? 'X' : (cell === 2 ? 'O' : '');
-        html += `<div class="ttt-cell ${cellClass}" onclick="handleTTTClick(${index})">${symbol}</div>`;
-      });
-
-      html += `
+      // Setup Header
+      const me = data.players.find(p => p.symbol === myData.symbol);
+      const opponent = data.players.find(p => p.symbol !== myData.symbol);
+      
+      document.getElementById('myName').innerText = me.name;
+      document.getElementById('oppName').innerText = opponent.name;
+      
+      // Show Game Selection (Only Host/X chooses)
+      if(myData.symbol === 'X') {
+        showGameSelection();
+      } else {
+        document.getElementById('gameContent').innerHTML = `
+          <div class="text-center">
+            <div class="text-4xl mb-4 animate-pulse">⏳</div>
+            <p class="text-gray-400">Waiting for Host to pick a game...</p>
           </div>
-          <button onclick="initTicTacToe()" class="outline-btn px-6 py-2 rounded-lg text-sm border border-white/20 hover:border-white/40">
-            Restart Round
-          </button>
+        `;
+      }
+    });
+
+    function showGameSelection() {
+      const html = `
+        <div class="text-center anim-fade-in">
+          <h3 class="text-2xl font-bold mb-6">Pick a Game</h3>
+          <div class="flex flex-col gap-4 w-64">
+            <button onclick="selectGame('tictactoe')" class="neon-btn py-4 rounded-xl text-xl">⭕ Tic Tac Toe</button>
+            <button onclick="selectGame('reflex')" class="neon-btn py-4 rounded-xl text-xl">⚡ Reflex Duel</button>
+          </div>
         </div>
       `;
-
-      container.innerHTML = html;
+      document.getElementById('gameContent').innerHTML = html;
     }
 
-    function handleTTTClick(index) {
-      if (!gameActive || board[index]) return;
-
-      // Set cell
-      board[index] = currentPlayer;
-
-      // Check Win
-      const winner = checkTTTWin();
-      if (winner) {
-        gameActive = false;
-        highlightWin(winner.pattern);
-        const winnerName = winner.player === 1 ? p1.name : p2.name;
-        document.getElementById('tttStatus').innerText = `${winnerName} Wins! 🎉`;
-        document.getElementById('tttStatus').className = winner.player === 1 ? 'text-2xl font-bold mb-6 p1-color' : 'text-2xl font-bold mb-6 p2-color';
-        addScore(winner.player, 50);
-        return;
-      }
-
-      // Check Draw
-      if (!board.includes(null)) {
-        gameActive = false;
-        document.getElementById('tttStatus').innerText = "It's a Draw!";
-        document.getElementById('tttStatus').className = 'text-2xl font-bold mb-6 text-gray-400';
-        return;
-      }
-
-      // Switch Turn
-      currentPlayer = currentPlayer === 1 ? 2 : 1;
-      renderTTTBoard();
+    function selectGame(type) {
+      socket.emit('select-game', { type, roomId: currentRoom });
     }
 
-    function checkTTTWin() {
-      for (let pattern of winPatterns) {
-        const [a, b, c] = pattern;
-        if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-          return { player: board[a], pattern: pattern };
-        }
-      }
-      return null;
+    socket.on('game-selected', (type) => {
+      if(type === 'tictactoe') initTTT();
+      if(type === 'reflex') initReflex();
+    });
+
+    function leaveGame() {
+      window.location.reload();
     }
 
-    function highlightWin(pattern) {
-      const cells = document.querySelectorAll('.ttt-cell');
-      pattern.forEach(index => {
-        cells[index].classList.add('win');
+    // --- TIC TAC TOE ---
+    let tttBoard = Array(9).fill(null);
+    
+    function initTTT() {
+      tttBoard = Array(9).fill(null);
+      renderTTT();
+    }
+
+    function renderTTT(turn = 'X', winnerInfo = null) {
+      const isMyTurn = turn === myData.symbol;
+      document.getElementById('turnIndicator').innerText = isMyTurn ? "Your Turn!" : "Opponent's Turn";
+      document.getElementById('turnIndicator').className = `text-xs px-2 py-1 rounded ${isMyTurn ? 'bg-[var(--primary)] text-black font-bold' : 'bg-black/50'}`;
+
+      let html = `<div class="ttt-grid">`;
+      tttBoard.forEach((cell, i) => {
+        const isWinning = winnerInfo && winnerInfo.includes(i);
+        const canClick = !cell && isMyTurn && !winnerInfo;
+        html += `
+          <div class="ttt-cell ${cell === 'X' ? 'x' : 'o'} ${isWinning ? 'win' : ''}" 
+               onclick="${canClick ? `sendTTTMove(${i})` : ''}">
+            ${cell || ''}
+          </div>
+        `;
       });
+      html += `</div>`;
+      
+      if(winnerInfo) {
+        const won = winnerInfo === 'draw' ? false : (tttBoard[winnerInfo[0]] === myData.symbol);
+        html += `
+          <div class="mt-6 text-center">
+            <h3 class="text-2xl font-bold ${winnerInfo === 'draw' ? 'text-gray-400' : (won ? 'text-green-400' : 'text-red-400')}">
+              ${winnerInfo === 'draw' ? 'Draw!' : (won ? 'You Win!' : 'You Lose!')}
+            </h3>
+            <button onclick="selectGame('tictactoe')" class="mt-4 neon-btn px-6 py-2 rounded-lg">Play Again</button>
+          </div>
+        `;
+      }
+      
+      document.getElementById('gameContent').innerHTML = html;
     }
 
-    // --- GAME 2: REFLEX DUEL ---
+    function sendTTTMove(index) {
+      socket.emit('ttt-move', { index, roomId: currentRoom });
+    }
+
+    socket.on('ttt-update', (data) => {
+      tttBoard = data.board;
+      renderTTT(data.turn, data.line || data.winner);
+    });
+
+    // --- REFLEX DUEL ---
     function initReflex() {
-      const container = document.getElementById('gameScreen');
-      container.innerHTML = `
-        <div class="w-full h-full flex flex-col items-center justify-center">
-           <div class="text-center mb-8 anim-fade-in">
-             <h3 class="text-2xl font-bold">Reflex Duel</h3>
-             <p class="text-gray-400">First to tap when the screen flashes wins!</p>
-           </div>
-           
-           <div class="w-full h-64 flex gap-2">
-             <div id="zone1" class="flex-1 glass flex items-center justify-center text-2xl font-bold rounded-xl cursor-pointer border border-[var(--primary)] hover:border-white transition-all" onclick="reflexTap(1)">
-               ${p1.name}<br><span class="text-xs opacity-50">TAP HERE</span>
-             </div>
-             <div id="zone2" class="flex-1 glass flex items-center justify-center text-2xl font-bold rounded-xl cursor-pointer border border-[var(--secondary)] hover:border-white transition-all" onclick="reflexTap(2)">
-               ${p2.name}<br><span class="text-xs opacity-50">TAP HERE</span>
-             </div>
-           </div>
-           
-           <button id="startReflexBtn" onclick="startReflexRound()" class="neon-btn px-8 py-3 rounded-xl text-xl mt-8">Start Round</button>
-           <div id="reflexMsg" class="h-8 mt-4 text-xl font-bold text-[var(--primary)]"></div>
+      const html = `
+        <div class="flex flex-col items-center justify-center h-full w-full anim-fade-in">
+          <div id="reflexBox" class="w-64 h-64 glass border-2 border-white/20 rounded-2xl flex items-center justify-center flex-col cursor-pointer reflex-wait">
+            <p class="text-2xl font-bold">WAIT</p>
+          </div>
+          <button id="reflexStartBtn" onclick="startReflexRound()" class="neon-btn px-8 py-3 rounded-xl text-xl mt-6">Start Round</button>
+          <p id="reflexMsg" class="h-6 mt-4 text-lg font-bold text-gray-400"></p>
         </div>
       `;
+      document.getElementById('gameContent').innerHTML = html;
     }
-
-    let canTap = false;
 
     function startReflexRound() {
-      canTap = false;
-      const zone1 = document.getElementById('zone1');
-      const zone2 = document.getElementById('zone2');
-      const msg = document.getElementById('reflexMsg');
-      const btn = document.getElementById('startReflexBtn');
-      
-      btn.style.display = 'none';
-      msg.innerText = "Wait for GREEN...";
-      msg.className = "h-8 mt-4 text-xl font-bold text-yellow-500";
-      zone1.classList.add('reflex-wait');
-      zone2.classList.add('reflex-wait');
-
-      const delay = (Math.random() * 3000) + 2000;
-
-      reflexTimeout = setTimeout(() => {
-        canTap = true;
-        msg.innerText = "GO!";
-        msg.className = "h-8 mt-4 text-xl font-bold text-green-500";
-        zone1.classList.remove('reflex-wait');
-        zone2.classList.remove('reflex-wait');
-        zone1.classList.add('reflex-active');
-        zone2.classList.add('reflex-active');
-      }, delay);
+      document.getElementById('reflexStartBtn').style.display = 'none';
+      document.getElementById('reflexMsg').innerText = "Wait for GREEN...";
+      socket.emit('start-reflex-round', { roomId: currentRoom });
     }
 
-    function reflexTap(player) {
-      const zone1 = document.getElementById('zone1');
-      const zone2 = document.getElementById('zone2');
+    socket.on('reflex-state', (data) => {
+      const box = document.getElementById('reflexBox');
       const msg = document.getElementById('reflexMsg');
-
-      if (!canTap) {
-        clearTimeout(reflexTimeout);
-        const winner = player === 1 ? p2 : p1;
-        msg.innerText = `Too early! ${winner.name} gets the point!`;
-        msg.className = "h-8 mt-4 text-xl font-bold text-red-500";
-        addScore(player === 1 ? 2 : 1, 20);
-        
-        zone1.classList.remove('reflex-wait');
-        zone2.classList.remove('reflex-wait');
-        document.getElementById('startReflexBtn').style.display = 'block';
-        return;
+      
+      if(data.status === 'waiting') {
+        box.className = "w-64 h-64 glass border-2 border-white/20 rounded-2xl flex items-center justify-center flex-col cursor-pointer reflex-wait";
+        box.innerHTML = `<p class="text-2xl font-bold text-[var(--secondary)]">WAIT</p>`;
+        box.onclick = () => sendReflexTap(); // Handle early tap locally? No, let server handle logic but visually allow tap
+      } else if(data.status === 'go') {
+        box.className = "w-64 h-64 glass border-2 border-white rounded-2xl flex items-center justify-center flex-col cursor-pointer reflex-go";
+        box.innerHTML = `<p class="text-2xl font-bold text-black">GO!</p>`;
+        msg.innerText = "TAP NOW!";
+        msg.className = "h-6 mt-4 text-lg font-bold text-green-400";
       }
+    });
 
-      canTap = false;
-      const winnerName = player === 1 ? p1.name : p2.name;
-      
-      msg.innerText = `${winnerName} wins the round!`;
-      msg.className = player === 1 ? "h-8 mt-4 text-xl font-bold p1-color" : "h-8 mt-4 text-xl font-bold p2-color";
-      addScore(player, 20);
-
-      zone1.classList.remove('reflex-active');
-      zone2.classList.remove('reflex-active');
-      
-      setTimeout(() => {
-        document.getElementById('startReflexBtn').style.display = 'block';
-      }, 1000);
+    function sendReflexTap() {
+      socket.emit('reflex-tap', { roomId: currentRoom });
     }
+
+    socket.on('reflex-result', (data) => {
+      const box = document.getElementById('reflexBox');
+      const msg = document.getElementById('reflexMsg');
+      const btn = document.getElementById('reflexStartBtn');
+      
+      box.onclick = null; // Disable further taps
+      
+      if(data.reason === 'early') {
+        msg.innerText = "Too Early! You lose.";
+        msg.className = "h-6 mt-4 text-lg font-bold text-red-500";
+      } else {
+        const won = data.winner === socket.id;
+        msg.innerText = won ? "You Win! ⚡" : "Too Slow!";
+        msg.className = `h-6 mt-4 text-lg font-bold ${won ? 'text-green-400' : 'text-red-400'}`;
+      }
+      
+      btn.style.display = 'block';
+      btn.innerText = "Play Again";
+    });
+
   </script>
 </body>
 </html>
