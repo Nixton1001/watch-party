@@ -22,11 +22,15 @@ app.use(express.static('public'));
 
 // --- ROUTES ---
 app.get('/', (req, res) => res.sendFile(__dirname + '/public/index.html'));
-app.get('/room', (req, res) => res.sendFile(__dirname + '/public/room.html'));
+app.get('/room', (req, res) => res.sendFile(__dirname + '/public/room.html')); // The Lobby
+app.get('/watch.html', (req, res) => res.sendFile(__dirname + '/public/watch.html'));
+app.get('/game.html', (req, res) => res.sendFile(__dirname + '/public/game.html'));
+
 app.post('/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
   res.json({ filePath: `/stream/${req.file.filename}` });
 });
+
 app.get('/stream/:filename', (req, res) => {
   const filePath = path.join(__dirname, 'uploads', req.params.filename);
   if (!fs.existsSync(filePath)) return res.status(404).send('File not found');
@@ -47,13 +51,15 @@ app.get('/stream/:filename', (req, res) => {
 });
 
 // --- IN-MEMORY STORAGE ---
-const rooms = {}; 
+const rooms = {}; // General Room Info
+const watchRooms = {}; // Specific Watch State
+const gameRooms = {}; // Specific Game State
 
 // --- SOCKET LOGIC ---
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // 1. GLOBAL LOBBY (For Index.html)
+  // 1. GLOBAL LOBBY (Index.html)
   socket.on('join-lobby', (data) => {
     socket.join('global-lobby');
     socket.lobbyData = data;
@@ -68,129 +74,79 @@ io.on('connection', (socket) => {
     socket.to('global-lobby').emit('lobby-user-joined', { id: socket.id, ...data });
   });
 
-  // 2. UNIFIED ROOM LOGIC
-  socket.on('join-room', (data) => {
-    let room = rooms[data.roomId];
-    
-    if (!room) {
-      room = {
-        id: data.roomId,
-        host: socket.id,
-        mode: 'lobby', 
-        users: [],
-        videoSrc: '', videoTime: 0, videoPlaying: false,
-        gameType: null, board: null, turn: null, scores: { X: 0, O: 0 }
-      };
-      rooms[data.roomId] = room;
-    }
-
+  // 2. ROOM LOBBY (room.html - The Category Selector)
+  socket.on('join-waiting', (data) => {
     socket.join(data.roomId);
     socket.roomId = data.roomId;
-    
-    const user = { id: socket.id, name: data.name, uid: data.uid };
-    if (room.users.length === 0) room.host = socket.id;
-    
-    room.users.push(user);
-
-    // 1. Send State to User
-    socket.emit('room-joined', { 
-      isHost: room.host === socket.id, 
-      roomState: room 
-    });
-
-    // 2. Notify Others for WebRTC & Chat
-    socket.to(data.roomId).emit('user-joined', user);
+    // Just keep track of who is in the general room for now
+    if (!rooms[data.roomId]) rooms[data.roomId] = { users: [] };
+    rooms[data.roomId].users.push({ id: socket.id, name: data.name });
+    io.to(data.roomId).emit('lobby-update', { code: data.roomId });
   });
 
-  // Mode Switching
-  socket.on('set-mode', (data) => {
-    const room = rooms[socket.roomId];
-    if (!room || room.host !== socket.id) return;
+  // 3. WATCH PARTY LOGIC (watch.html)
+  socket.on('create-room', (data) => {
+    const roomId = data.roomId;
+    if (!watchRooms[roomId]) watchRooms[roomId] = { host: socket.id, hostUid: data.uid, videoSrc: '', welcomeMsg: '', users: [] };
     
-    room.mode = data.mode;
-    if(data.gameType) room.gameType = data.gameType;
-    
-    if (data.mode === 'game') {
-      room.board = Array(9).fill(null);
-      room.turn = 'X';
-      // Assign symbols
-      if(room.users[0]) room.users[0].symbol = 'X';
-      if(room.users[1]) room.users[1].symbol = 'O';
-    }
-    io.to(socket.roomId).emit('mode-changed', { mode: room.mode, roomState: room });
+    watchRooms[roomId].host = socket.id;
+    watchRooms[roomId].users.push({ id: socket.id, uid: data.uid, name: data.name });
+    socket.join(roomId); 
+    socket.roomId = roomId;
+    socket.emit('room-created', { roomId });
   });
 
-  // WebRTC Relay
+  socket.on('join-room', (data) => {
+    const room = watchRooms[data.roomId];
+    if (!room) return socket.emit('error', 'Room not found');
+    socket.roomId = data.roomId;
+    
+    socket.join(data.roomId);
+    socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
+    room.users.push({ id: socket.id, uid: data.uid, name: data.name });
+    
+    socket.emit('room-joined', { roomId: data.roomId, videoSrc: room.videoSrc, welcomeMsg: room.welcomeMsg });
+  });
+
+  socket.on('sync-video', (data) => { 
+    const r = socket.roomId; 
+    if (!r || !watchRooms[r]) return; 
+    if (data.type === 'src') watchRooms[r].videoSrc = data.src; 
+    socket.broadcast.to(r).emit('sync-video', data); 
+  });
+
+  socket.on('request-sync', () => { 
+    if (socket.roomId && watchRooms[socket.roomId]) 
+      socket.to(watchRooms[socket.roomId].host).emit('get-state', { requester: socket.id }); 
+  });
+  
+  socket.on('send-state', (data) => { 
+    io.to(data.to).emit('sync-video', { type: 'seek', time: data.time }); 
+    if(data.playing) io.to(data.to).emit('sync-video', { type: 'play' }); 
+  });
+
+  socket.on('chat-message', (data) => { if(socket.roomId) io.to(socket.roomId).emit('chat-message', data); });
+
+  // 4. COMMON SIGNALING (WebRTC)
   socket.on('signal', (data) => {
     io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
   });
 
-  // Watch Sync
-  socket.on('sync-video', (data) => {
-    const room = rooms[socket.roomId];
-    if (!room) return;
-    if (data.type === 'src') room.videoSrc = data.src;
-    if (data.type === 'play') { room.videoPlaying = true; room.videoTime = data.time; }
-    if (data.type === 'pause') { room.videoPlaying = false; room.videoTime = data.time; }
-    if (data.type === 'seek') room.videoTime = data.time;
-    socket.to(socket.roomId).emit('sync-video', data);
-  });
-
-  // Game Logic
-  socket.on('game-move', (data) => {
-    const room = rooms[socket.roomId];
-    if (!room || room.mode !== 'game') return;
-    const user = room.users.find(u => u.id === socket.id);
-    if (!user || room.turn !== user.symbol) return;
-
-    room.board[data.index] = user.symbol;
-    const winLine = checkWin(room.board);
-    if (winLine) {
-      room.scores[user.symbol]++;
-      io.to(socket.roomId).emit('game-update', { board: room.board, line: winLine, winner: user.symbol, scores: room.scores });
-    } else if (room.board.every(c => c !== null)) {
-      io.to(socket.roomId).emit('game-update', { board: room.board, draw: true, scores: room.scores });
-    } else {
-      room.turn = room.turn === 'X' ? 'O' : 'X';
-      io.to(socket.roomId).emit('game-update', { board: room.board, turn: room.turn, scores: room.scores });
-    }
-  });
-
-  socket.on('restart-game', () => {
-    const room = rooms[socket.roomId];
-    if (!room) return;
-    room.board = Array(9).fill(null);
-    room.turn = 'X';
-    io.to(socket.roomId).emit('game-update', { board: room.board, turn: room.turn, scores: room.scores });
-  });
-
-  // Chat
-  socket.on('chat-message', (data) => {
-    io.to(socket.roomId).emit('chat-message', data);
-  });
-
-  // Disconnect
+  // 5. DISCONNECT
   socket.on('disconnect', () => {
-    // Global Lobby Cleanup
     if(socket.lobbyData) socket.to('global-lobby').emit('user-disconnected', socket.id);
-
-    // Room Cleanup
+    
+    // Clean up general room
     if (socket.roomId && rooms[socket.roomId]) {
-      const room = rooms[socket.roomId];
-      room.users = room.users.filter(u => u.id !== socket.id);
-      socket.to(socket.roomId).emit('user-disconnected', socket.id);
-      if (room.users.length === 0) {
-        setTimeout(() => { if (rooms[socket.roomId]?.users.length === 0) delete rooms[socket.roomId]; }, 1000 * 60 * 2);
-      }
+       rooms[socket.roomId].users = rooms[socket.roomId].users.filter(u => u.id !== socket.id);
+    }
+    // Clean up watch room
+    if (socket.roomId && watchRooms[socket.roomId]) {
+       watchRooms[socket.roomId].users = watchRooms[socket.roomId].users.filter(u => u.id !== socket.id);
+       socket.to(socket.roomId).emit('user-disconnected', { id: socket.id });
     }
   });
 });
-
-function checkWin(b) {
-  const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
-  for (let l of lines) { const [a,x,c] = l; if (b[a] && b[a]===b[x] && b[a]===b[c]) return l; }
-  return null;
-}
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Running on ${PORT}`));
