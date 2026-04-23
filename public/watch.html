@@ -187,7 +187,8 @@
     const messagesContainer = document.getElementById('messagesContainer');
     
     let myStream, myName, isHost = false, isMicOn = false;
-    const peers = {}, users = {};
+    const peers = {}; // Stores RTCPeerConnection objects
+    const users = {};
 
     // --- 1. INIT & URL PARAMS ---
     window.onload = async () => {
@@ -231,13 +232,6 @@
       document.getElementById('chatBox').scrollTop = 10000;
     }
 
-    function showJoinOverlay(msg) {
-      const overlay = document.getElementById('join-overlay');
-      document.getElementById('join-message-text').innerText = msg || "Welcome!";
-      overlay.style.display = 'flex';
-      setTimeout(() => overlay.style.display = 'none', 3000);
-    }
-
     function copyCode() {
         const code = document.getElementById('displayRoomCodeChat').innerText;
         navigator.clipboard.writeText(code);
@@ -250,13 +244,12 @@
     // --- AUDIO ONLY MEDIA ---
     async function getMedia() {
       try {
-        // Request only Audio
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
         myStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
         isMicOn = true;
         updateMicUI();
       } catch (e) {
-        console.error("Microphone access denied or not available.", e);
+        console.error("Microphone access denied.", e);
         myStream = null;
       }
     }
@@ -279,13 +272,103 @@
 
     socket.on('chat-message', (data) => addChatMessage(data.name, data.msg, '#00f3ff'));
 
-    socket.on('user-connected', (data) => addChatMessage('System', `${data.name} joined`, '#888'));
-
-    socket.on('user-disconnected', (data) => {
-        addChatMessage('System', `${data.name} left`, '#888');
-        if(peers[data.id]) peers[data.id].close();
+    socket.on('user-joined', (data) => {
+      addChatMessage('System', `${data.name} joined`, '#888');
+      // We initiate the call to the new user
+      createPeerConnection(data.id, true);
     });
 
+    socket.on('user-disconnected', (data) => {
+      addChatMessage('System', `${data.name} left`, '#888');
+      if(peers[data.id]) {
+        peers[data.id].close();
+        delete peers[data.id];
+      }
+    });
+
+    // --- WEBRTC SIGNALING ---
+    socket.on('signal', async (data) => {
+      if (!peers[data.from]) {
+        createPeerConnection(data.from, false);
+      }
+
+      const pc = peers[data.from];
+      
+      try {
+        if (data.signal.type === 'offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          socket.emit('signal', { to: data.from, signal: answer });
+        } 
+        else if (data.signal.type === 'answer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+        } 
+        else if (data.signal.candidate) {
+          await pc.addIceCandidate(new RTCIceCandidate(data.signal));
+        }
+      } catch (err) {
+        console.error('Error handling signal:', err);
+      }
+    });
+
+    // --- WEBRTC PEER CONNECTION ---
+    function createPeerConnection(userId, isOfferer) {
+      if (peers[userId]) return;
+
+      const config = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      };
+
+      const pc = new RTCPeerConnection(config);
+      peers[userId] = pc;
+
+      // Add our audio tracks
+      if (myStream) {
+        myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
+      }
+
+      // Handle remote audio stream
+      pc.ontrack = (event) => {
+        console.log("Received remote track");
+        // Create an invisible audio element to play the sound
+        let remoteAudio = document.getElementById(`audio-${userId}`);
+        if (!remoteAudio) {
+          remoteAudio = document.createElement('audio');
+          remoteAudio.id = `audio-${userId}`;
+          remoteAudio.autoplay = true;
+          document.body.appendChild(remoteAudio);
+        }
+        if (remoteAudio.srcObject !== event.streams[0]) {
+          remoteAudio.srcObject = event.streams[0];
+        }
+      };
+
+      // Handle ICE candidates
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('signal', { to: userId, signal: event.candidate });
+        }
+      };
+
+      // If we are the offerer, create the offer
+      if (isOfferer) {
+        pc.onnegotiationneeded = async () => {
+          try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit('signal', { to: userId, signal: offer });
+          } catch (err) {
+            console.error('Error creating offer:', err);
+          }
+        };
+      }
+    }
+
+    // --- VIDEO SYNC & CONTROLS ---
     socket.on('sync-video', (data) => {
       if(!isHost) {
         if(data.type === 'play') { video.currentTime = data.time; video.play(); }
@@ -325,7 +408,6 @@
     function leaveRoom() { window.location.href = '/'; }
     function forcePlay() { video.play(); document.getElementById('mobilePlayOverlay').style.display = 'none'; }
 
-    // --- 3. VIDEO SYNC & CONTROLS ---
     function togglePlayPause() { if(video.paused) video.play(); else video.pause(); }
     
     video.onplay = () => { 
@@ -361,7 +443,6 @@
         else document.exitFullscreen();
     }
 
-    // Use the upload function that works with the server (from previous fix)
     async function uploadVideo(input) {
         if (input.files && input.files[0]) {
             const file = input.files[0];
