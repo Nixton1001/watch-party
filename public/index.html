@@ -8,163 +8,39 @@
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
   <style>
     :root { --primary: #00f3ff; --secondary: #bc13fe; --bg: #050505; }
-    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow-x: hidden; }
+    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow: hidden; }
+    @keyframes fadeIn { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
+    @keyframes zoomIn { 0% { opacity: 0; transform: scale(0.8); } 100% { opacity: 1; transform: scale(1); } }
     
-    @keyframes fadeInUp { 0% { opacity: 0; transform: translateY(30px); } 100% { opacity: 1; transform: translateY(0); } }
-    @keyframes zoomIn { 0% { opacity: 0; transform: scale(0.5); filter: blur(10px); } 100% { opacity: 1; transform: scale(1); filter: blur(0); } }
-    @keyframes bgPan { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+    /* Splash & Background */
+    #splash-screen { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at center, #0a0a12 0%, #000000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.8s ease; }
+    #splash-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    .splash-title { font-family: 'Orbitron', sans-serif; font-size: 8vw; font-weight: 900; color: white; text-align: center; line-height: 1.1; }
+    .splash-title span { color: var(--primary); display: inline-block; }
 
-    #splash-screen { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at center, #0a0a12 0%, #000000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.8s ease, visibility 0.8s ease; }
-    #splash-screen.hidden { opacity: 0; visibility: hidden; }
-
-    .splash-bg-effect { position: absolute; width: 150%; height: 150%; background: radial-gradient(circle, transparent 0%, #000 80%), linear-gradient(0deg, transparent 24%, var(--primary) 25%, var(--primary) 26%, transparent 27%, transparent 74%, var(--primary) 75%, var(--primary) 76%, transparent 77%, transparent), linear-gradient(90deg, transparent 24%, var(--primary) 25%, var(--primary) 26%, transparent 27%, transparent 74%, var(--primary) 75%, var(--primary) 76%, transparent 77%, transparent); background-size: 100% 100%, 50px 50px, 50px 50px; opacity: 0.05; z-index: 0; animation: bgPan 10s linear infinite; }
-    
+    /* Modal */
+    #nameModal { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.95); display: flex; align-items: center; justify-content: center; }
     .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
-    .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; border: none; }
-    .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--primary); transform: translateY(-2px); }
+    .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: 0.2s; }
+    .neon-btn:hover { filter: brightness(1.2); }
+    .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; }
+    .input-futuristic:focus { outline: none; border-color: var(--primary); }
+
+    /* Lobby UI */
+    .mode-btn { transition: 0.2s; border: 2px solid transparent; opacity: 0.6; }
+    .mode-btn.active { border-color: var(--primary); opacity: 1; background: rgba(0,243,255,0.1); }
     
-    .outline-btn { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: white; transition: all 0.3s; }
-    .outline-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(0, 243, 255, 0.05); }
-
-    .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; transition: all 0.3s; }
-    .input-futuristic:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 15px rgba(0, 243, 255, 0.2); }
-
-    .anim-fade-in { animation: fadeInUp 0.6s ease forwards; opacity: 0; }
+    .anim-fade-in { animation: fadeIn 0.6s ease forwards; opacity: 0; }
   </style>
 </head>
 <body>
 
   <!-- SPLASH SCREEN -->
   <div id="splash-screen">
-    <div class="splash-bg-effect"></div>
-    <div class="text-lg tracking-widest text-gray-400 uppercase anim-fade-in" style="animation-delay: 0.2s">Welcome to</div>
-    <div class="text-8xl md:text-9xl font-black text-white my-4 anim-fade-in" style="font-family: 'Orbitron'; animation-delay: 0.4s">WATCH<br><span class="text-[var(--primary)]">NIGHT</span></div>
-    <div class="text-2xl md:text-3xl font-bold text-gray-300 mt-8 anim-fade-in" style="animation-delay: 0.6s">
-      Made with <span class="text-red-500 text-3xl">❤</span> by <span class="text-[var(--primary)]">Nikhil (Nixton)</span>
-    </div>
+    <div class="splash-title" style="animation: zoomIn 1s ease forwards; animation-delay: 0.2s">WATCH<br><span>NIGHT</span></div>
+    <div class="mt-8 text-2xl text-gray-300" style="animation: fadeIn 1s ease forwards; animation-delay: 0.5s">Made with ❤ by Nikhil (Nixton)</div>
   </div>
 
-  <!-- MAIN HUB -->
-  <div id="mainHub" class="min-h-screen w-screen flex flex-col items-center justify-center p-6 opacity-0 transition-opacity duration-1000">
-    
-    <!-- Step 1: Name -->
-    <div class="mb-10 w-full max-w-lg anim-fade-in" style="animation-delay: 0.2s">
-      <label class="text-xs text-gray-500 uppercase tracking-widest mb-2 block text-center">Step 1: Identify Yourself</label>
-      <input type="text" id="globalName" placeholder="Enter Your Name" class="w-full input-futuristic rounded-xl p-4 text-2xl text-center font-bold tracking-wide">
-    </div>
-
-    <div class="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-8">
-      
-      <!-- WATCH TOGETHER -->
-      <div class="glass rounded-2xl p-6 border border-white/10 flex flex-col anim-fade-in" style="animation-delay: 0.3s">
-        <div class="flex items-center gap-4 mb-6">
-          <div class="text-5xl">🎬</div>
-          <div>
-            <h2 class="text-2xl font-bold" style="font-family: 'Orbitron'">Watch Together</h2>
-            <p class="text-gray-500 text-sm">Stream videos in sync</p>
-          </div>
-        </div>
-        <div class="space-y-3">
-          <button onclick="createRoom('watch')" class="w-full neon-btn py-3 rounded-xl text-lg">Create Room</button>
-          <div class="flex gap-2">
-            <input type="text" id="watchCode" placeholder="Enter Code" class="flex-1 input-futuristic rounded-xl p-3 uppercase text-center text-lg tracking-widest">
-            <button onclick="joinRoom('watch')" class="outline-btn px-6 rounded-xl font-bold">Join</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- GAME ZONE -->
-      <div class="glass rounded-2xl p-6 border border-white/10 flex flex-col anim-fade-in" style="animation-delay: 0.4s">
-        <div class="flex items-center gap-4 mb-4">
-          <div class="text-5xl">🎮</div>
-          <div>
-            <h2 class="text-2xl font-bold" style="font-family: 'Orbitron'">Game Zone</h2>
-            <p class="text-gray-500 text-sm">Play with friends</p>
-          </div>
-        </div>
-
-        <!-- Game Selection Big -->
-        <div class="grid grid-cols-2 gap-3 mb-4">
-          <button onclick="selectGame('tictactoe')" id="btn-ttt" class="outline-btn p-3 rounded-xl flex flex-col items-center active">
-            <span class="text-3xl mb-1">⭕</span>
-            <span class="text-xs font-bold uppercase tracking-wider">Tic Tac Toe</span>
-          </button>
-          <button onclick="selectGame('reflex')" id="btn-reflex" class="outline-btn p-3 rounded-xl flex flex-col items-center">
-            <span class="text-3xl mb-1">⚡</span>
-            <span class="text-xs font-bold uppercase tracking-wider">Reflex Duel</span>
-          </button>
-        </div>
-
-        <div class="space-y-3">
-          <button onclick="createRoom('game')" class="w-full neon-btn py-3 rounded-xl text-lg">Create Game</button>
-          <div class="flex gap-2">
-            <input type="text" id="gameCode" placeholder="Enter Code" class="flex-1 input-futuristic rounded-xl p-3 uppercase text-center text-lg tracking-widest">
-            <button onclick="joinRoom('game')" class="outline-btn px-6 rounded-xl font-bold">Join</button>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-  <script>
-    let selectedGameType = 'tictactoe';
-
-    window.onload = () => {
-      setTimeout(() => {
-        document.getElementById('splash-screen').classList.add('hidden');
-        const hub = document.getElementById('mainHub');
-        hub.style.opacity = '1';
-      }, 3500);
-      
-      const savedName = localStorage.getItem('watchNightName');
-      if(savedName) document.getElementById('globalName').value = savedName;
-    };
-
-    function getName() {
-      const name = document.getElementById('globalName').value || 'Player';
-      localStorage.setItem('watchNightName', name);
-      return name;
-    }
-
-    function generateUID() { 
-      return Math.random().toString(36).substring(2, 8).toUpperCase(); 
-    }
-
-    function selectGame(type) {
-      selectedGameType = type;
-      document.getElementById('btn-ttt').classList.toggle('active', type === 'tictactoe');
-      document.getElementById('btn-reflex').classList.toggle('active', type === 'reflex');
-    }
-
-    function createRoom(type) {
-      const name = getName();
-      const roomId = generateUID();
-      
-      if(type === 'watch') {
-        window.location.href = `/watch.html?action=create&room=${roomId}&name=${encodeURIComponent(name)}`;
-      } else {
-        window.location.href = `/game.html?action=create&room=${roomId}&name=${encodeURIComponent(name)}&game=${selectedGameType}`;
-      }
-    }
-
-    function joinRoom(type) {
-      const name = getName();
-      let code = '';
-      
-      if(type === 'watch') code = document.getElementById('watchCode').value.toUpperCase();
-      else code = document.getElementById('gameCode').value.toUpperCase();
-
-      if(!code) return alert("Please enter a code");
-
-      if(type === 'watch') {
-        window.location.href = `/watch.html?action=join&room=${code}&name=${encodeURIComponent(name)}`;
-      } else {
-        window.location.href = `/game.html?action=join&room=${code}&name=${encodeURIComponent(name)}`;
-      }
-    }
-
-    selectGame('tictactoe');
-  </script>
-</body>
-</html>
+  <!-- NAME MODAL (Compulsory) -->
+  <div id="nameModal">
+    <div class="glass p-8 rounded-2xl w-11/
