@@ -1,6 +1,3 @@
-Here is the complete `server.js` file. It includes the **Global Lobby** logic for the common audio call system on the index page, as well as all the logic for Watch Parties and Games.
-
-```javascript
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -339,4 +336,3 @@ function checkTTTWinner(b) {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Running on ${PORT}`));
-```
