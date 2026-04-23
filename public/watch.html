@@ -187,7 +187,7 @@
     const messagesContainer = document.getElementById('messagesContainer');
     
     let myStream, myName, isHost = false, isMicOn = false;
-    const peers = {}; // Stores RTCPeerConnection objects
+    const peers = {}; 
     const users = {};
 
     // --- 1. INIT & URL PARAMS ---
@@ -197,8 +197,12 @@
       myName = urlParams.get('name') || 'Guest';
       const room = urlParams.get('room');
 
+      // Always show lobby if no params. 
+      // If params exist, we need to wait for user click (handleCreate/Join) to get media due to browser policies.
       if (action === 'create' || (action === 'join' && room)) {
-        await getMedia();
+        // Auto-join flow requires user interaction for audio permissions usually, 
+        // but let's attempt it (Laptop usually works, Mobile might need user to click Mic button first)
+        await getMedia(); 
         if (action === 'create') socket.emit('create-room', { name: myName });
         else socket.emit('join-room', { roomId: room, name: myName });
       } else {
@@ -250,6 +254,7 @@
         updateMicUI();
       } catch (e) {
         console.error("Microphone access denied.", e);
+        alert("Microphone access is required for audio chat. Please enable it in your browser settings.");
         myStream = null;
       }
     }
@@ -274,7 +279,6 @@
 
     socket.on('user-joined', (data) => {
       addChatMessage('System', `${data.name} joined`, '#888');
-      // We initiate the call to the new user
       createPeerConnection(data.id, true);
     });
 
@@ -284,6 +288,9 @@
         peers[data.id].close();
         delete peers[data.id];
       }
+      // Remove audio element
+      const audioEl = document.getElementById(`audio-${data.id}`);
+      if(audioEl) audioEl.remove();
     });
 
     // --- WEBRTC SIGNALING ---
@@ -333,17 +340,24 @@
 
       // Handle remote audio stream
       pc.ontrack = (event) => {
-        console.log("Received remote track");
-        // Create an invisible audio element to play the sound
+        console.log("Received remote track from", userId);
+        
+        // Look for existing audio element or create one
         let remoteAudio = document.getElementById(`audio-${userId}`);
         if (!remoteAudio) {
           remoteAudio = document.createElement('audio');
           remoteAudio.id = `audio-${userId}`;
+          // Important for Mobile iOS/Android Autoplay
+          remoteAudio.playsInline = true; 
           remoteAudio.autoplay = true;
           document.body.appendChild(remoteAudio);
         }
+        
+        // Attach stream
         if (remoteAudio.srcObject !== event.streams[0]) {
           remoteAudio.srcObject = event.streams[0];
+          // Force play to bypass mobile blockers if possible
+          remoteAudio.play().catch(e => console.log("Autoplay prevented, user needs to interact first."));
         }
       };
 
