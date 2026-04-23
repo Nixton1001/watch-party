@@ -16,23 +16,81 @@ const storage = multer.diskStorage({
   destination: './uploads/',
   filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
-const upload = multer({ storage: storage });
+
+// LIMIT: 1GB File Size
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 1024 * 1024 * 1024 } // 1GB
+});
 
 app.use(express.static('public'));
-app.use('/uploads', express.static('uploads'));
 
 // --- ROUTES ---
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/public/index.html');
-});
 
-app.get('/watch.html', (req, res) => {
-  res.sendFile(__dirname + '/public/watch.html');
-});
+// Main Pages
+app.get('/', (req, res) => res.sendFile(__dirname + '/public/index.html'));
+app.get('/watch.html', (req, res) => res.sendFile(__dirname + '/public/watch.html'));
 
+// Upload Route
 app.post('/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
-  res.json({ filePath: `/uploads/${req.file.filename}` });
+  // We return a path to our streaming endpoint, not the static file
+  res.json({ filePath: `/stream/${req.file.filename}` });
+});
+
+// --- STREAMING ROUTE (The Fix) ---
+app.get('/stream/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(__dirname, 'uploads', filename);
+  
+  // Check if file exists
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send('File not found');
+  }
+
+  const stat = fs.statSync(filePath);
+  const fileSize = stat.size;
+  const range = req.headers.range;
+
+  if (range) {
+    // Parse the Range header (e.g., "bytes=32324-")
+    const parts = range.replace(/bytes=/, "").split("-");
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+    // Calculate chunk size (1MB chunks for smooth streaming)
+    const chunksize = (end - start) + 1;
+    const file = fs.createReadStream(filePath, { start, end });
+    
+    const head = {
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunksize,
+      'Content-Type': 'video/mp4',
+    };
+
+    res.writeHead(206, head);
+    file.pipe(res);
+  } else {
+    // If no Range header (some older browsers/devices), send the whole file
+    const head = {
+      'Content-Length': fileSize,
+      'Content-Type': 'video/mp4',
+    };
+    res.writeHead(200, head);
+    fs.createReadStream(filePath).pipe(res);
+  }
+});
+
+// --- ERROR HANDLING ---
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File size exceeds 1GB limit.' });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+  next(err);
 });
 
 // --- SOCKET LOGIC ---
@@ -45,10 +103,11 @@ io.on('connection', (socket) => {
     const roomId = generateRoomId();
     rooms[roomId] = {
       host: socket.id,
-      hostUid: data.uid, // Store the unique ID of the host
+      hostUid: data.uid, 
       videoSrc: '',
       welcomeMsg: '',
-      users: [{ id: socket.id, uid: data.uid, name: data.name }]
+      users: [{ id: socket.id, uid: data.uid, name: data.name }],
+      timeout: null
     };
     socket.join(roomId);
     socket.roomId = roomId;
@@ -61,39 +120,33 @@ io.on('connection', (socket) => {
     if (!room) return socket.emit('error', 'Room not found or expired');
     
     socket.roomId = data.roomId;
+
+    if (room.timeout) {
+      clearTimeout(room.timeout);
+      room.timeout = null;
+      console.log(`Deletion cancelled for room ${data.roomId}`);
+    }
     
-    // Check if this user is the HOST reconnecting
     if (room.hostUid === data.uid) {
-      console.log(`Host reconnected to ${data.roomId}`);
-      room.host = socket.id; // Update the socket ID
-      socket.join(data.roomId);
-      
-      // Find and update user entry
+      room.host = socket.id; 
       const userIndex = room.users.findIndex(u => u.uid === data.uid);
       if (userIndex > -1) room.users[userIndex].id = socket.id;
       else room.users.push({ id: socket.id, uid: data.uid, name: data.name });
-
-      // Emit 'room-created' again to restore host UI
+      socket.join(data.roomId);
       return socket.emit('room-created', { roomId: data.roomId });
     }
 
-    // Check if this user is a GUEST reconnecting
     const existingUser = room.users.find(u => u.uid === data.uid);
     if (existingUser) {
-      console.log(`Guest reconnected to ${data.roomId}`);
-      existingUser.id = socket.id; // Update socket ID
+      existingUser.id = socket.id;
       socket.join(data.roomId);
-      
-      // Send current state
-      socket.emit('room-joined', { 
+      return socket.emit('room-joined', { 
         roomId: data.roomId, 
         videoSrc: room.videoSrc,
         welcomeMsg: room.welcomeMsg
       });
-      return;
     }
 
-    // New Guest Logic
     socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
     room.users.push({ id: socket.id, uid: data.uid, name: data.name });
     socket.join(data.roomId);
@@ -105,19 +158,12 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Save Welcome Message
   socket.on('set-welcome-msg', (data) => {
-    if (socket.roomId && rooms[socket.roomId]) {
-      rooms[socket.roomId].welcomeMsg = data.msg;
-    }
+    if (socket.roomId && rooms[socket.roomId]) rooms[socket.roomId].welcomeMsg = data.msg;
   });
 
-  // WebRTC Signaling
-  socket.on('signal', (data) => {
-    io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
-  });
+  socket.on('signal', (data) => io.to(data.to).emit('signal', { from: socket.id, signal: data.signal }));
 
-  // Video Sync
   socket.on('sync-video', (data) => {
     const roomId = socket.roomId;
     if (!roomId || !rooms[roomId]) return;
@@ -127,9 +173,7 @@ io.on('connection', (socket) => {
 
   socket.on('request-sync', () => {
     const roomId = socket.roomId;
-    if (roomId && rooms[roomId]) {
-      socket.to(rooms[roomId].host).emit('get-state', { requester: socket.id });
-    }
+    if (roomId && rooms[roomId] && rooms[roomId].host) socket.to(rooms[roomId].host).emit('get-state', { requester: socket.id });
   });
 
   socket.on('send-state', (data) => {
@@ -142,25 +186,24 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
     const roomId = socket.roomId;
     if (roomId && rooms[roomId]) {
-      const room = rooms[roomId];
-      
-      // Note: We do NOT remove the user from the array immediately on disconnect.
-      // This allows them to refresh and rejoin with the same UID.
-      // We only remove the room if it becomes truly empty after a delay (optional).
-      // For this fix, we'll keep the room alive as long as possible.
-      
-      // Just notify others this specific socket is gone (for audio cleanup)
       socket.to(roomId).emit('user-disconnected', { id: socket.id });
+      const clientsInRoom = io.sockets.adapter.rooms.get(roomId);
+      if (!clientsInRoom || clientsInRoom.size === 0) {
+        rooms[roomId].timeout = setTimeout(() => {
+          const currentClients = io.sockets.adapter.rooms.get(roomId);
+          if ((!currentClients || currentClients.size === 0) && rooms[roomId]) {
+            delete rooms[roomId];
+            console.log(`Room ${roomId} deleted.`);
+          }
+        }, 1000 * 60 * 2); // 2 Minutes
+      }
     }
   });
 });
 
-function generateRoomId() { 
-  return Math.random().toString(36).substring(2, 8).toUpperCase(); 
-}
+function generateRoomId() { return Math.random().toString(36).substring(2, 8).toUpperCase(); }
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
