@@ -1,498 +1,104 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Watch-Night | Watch Together</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="/socket.io/socket.io.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root { --primary: #00f3ff; --secondary: #bc13fe; --bg: #050505; }
-    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow: hidden; }
-    
-    /* --- Scrollbar --- */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: #111; }
-    ::-webkit-scrollbar-thumb { background: linear-gradient(var(--primary), var(--secondary)); border-radius: 3px; }
+const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const http = require('http');
+const { Server } = require('socket.io');
 
-    /* --- Animations --- */
-    @keyframes slideUp { 0% { opacity: 0; transform: translateY(50px); } 100% { opacity: 1; transform: translateY(0); } }
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
-    /* --- Buttons --- */
-    .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; border: none; }
-    .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--primary); transform: translateY(-2px); }
-    
-    .outline-btn { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: white; transition: all 0.3s; }
-    .outline-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(0, 243, 255, 0.05); }
+if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
-    /* --- Inputs --- */
-    .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; transition: all 0.3s; }
-    .input-futuristic:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 10px rgba(0, 243, 255, 0.2); }
+const storage = multer.diskStorage({
+  destination: './uploads/',
+  filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
+});
+const upload = multer({ storage: storage });
 
-    /* --- Layout --- */
-    .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
-    
-    #join-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; flex-direction: column; }
-    .join-text { font-family: 'Orbitron', sans-serif; font-size: 2.5rem; font-weight: bold; text-align: center; padding: 20px; animation: slideUp 0.5s ease; }
+app.use(express.static('public'));
+app.use('/uploads', express.static('uploads'));
 
-    #mobilePlayOverlay { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; flex-direction: column; cursor: pointer; }
-    
-    video { background: black; }
-    
-    .video-controls { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 20px 10px 10px; opacity: 0; transition: opacity 0.3s; }
-    .video-wrapper:hover .video-controls, .video-wrapper:active .video-controls { opacity: 1; }
-    
-    .control-btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; cursor: pointer; transition: all 0.2s; border-radius: 8px; }
-    .control-btn:hover { background: var(--primary); color: black; border-color: var(--primary); }
-    
-    #sidebar { width: 320px; display: flex; flex-direction: column; border-left: 1px solid rgba(0, 243, 255, 0.2); transition: all 0.3s; box-shadow: -5px 0 20px rgba(0,0,0,0.5); }
-    #sidebar.hidden { display: none; } 
-    
-    .vertical-bar { position: absolute; right: 330px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 50; transition: right 0.3s ease; }
-    .vertical-bar.sidebar-hidden { right: 10px; }
+app.post('/upload', upload.single('video'), (req, res) => {
+  if (!req.file) return res.status(400).send('No file uploaded.');
+  res.json({ filePath: `/uploads/${req.file.filename}` });
+});
 
-    .icon-btn { width: 50px; height: 50px; border-radius: 50%; background: rgba(10, 10, 10, 0.6); border: 1px solid rgba(0, 243, 255, 0.3); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; color: white; backdrop-filter: blur(5px); }
-    .icon-btn:hover { border-color: var(--primary); box-shadow: 0 0 10px var(--primary); }
-    .icon-btn.active { background: var(--primary); color: black; border-color: var(--primary); box-shadow: 0 0 15px var(--primary); }
-    .icon-btn.danger { background: #ff4757; border-color: #ff4757; }
+const rooms = {};
 
-    .peer-video { position: absolute; bottom: 80px; right: 20px; width: 150px; height: 100px; background: #000; border: 1px solid var(--secondary); border-radius: 8px; overflow: hidden; z-index: 40; }
-    .peer-video video { width: 100%; height: 100%; object-fit: cover; }
-    .peer-name { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); font-size: 10px; padding: 2px 5px; color: white; }
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
 
-    .chat-message { word-wrap: break-word; word-break: break-word; margin-bottom: 8px; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border-left: 2px solid var(--primary); animation: slideUp 0.3s ease; }
-
-    .room-code-big { font-family: 'Orbitron', sans-serif; font-size: 2rem; font-weight: 900; letter-spacing: 6px; color: var(--primary); text-shadow: 0 0 10px var(--primary); cursor: pointer; transition: all 0.3s; }
-    .room-code-big:hover { color: white; text-shadow: 0 0 20px white; }
-
-    @media (max-width: 768px) {
-      #sidebar { position: fixed; right: 0; top: 0; bottom: 0; width: 85%; max-width: 320px; z-index: 70; transform: translateX(100%); display: flex; }
-      #sidebar.open { transform: translateX(0); }
-      #sidebar.hidden { display: flex; transform: translateX(100%); }
-      .vertical-bar { position: fixed; bottom: 0; left: 0; right: 0; top: auto; transform: none; flex-direction: row; justify-content: center; gap: 15px; background: rgba(5, 5, 5, 0.95); padding: 10px 0; border-top: 1px solid rgba(0, 243, 255, 0.2); z-index: 60; right: auto; }
-      .video-wrapper { height: calc(100vh - 70px); }
-      .peer-video { bottom: 80px; width: 100px; height: 70px; }
-    }
-  </style>
-</head>
-<body>
-
-  <!-- JOIN OVERLAY -->
-  <div id="join-overlay">
-    <div class="join-text" id="join-message-text"></div>
-    <div class="mt-4 text-gray-400 animate-pulse">Loading...</div>
-  </div>
-
-  <!-- PAGE 1: LOBBY -->
-  <div id="entryPage" class="h-screen w-screen flex items-center justify-center">
-    <div class="glass p-8 rounded-2xl w-full max-w-md space-y-6 border-l-4 border-l-[var(--primary)] relative overflow-hidden">
-      <div class="absolute top-0 right-0 w-20 h-20 border-t-2 border-r-2 border-[var(--primary)] opacity-50 rounded-tr-2xl"></div>
-      
-      <div class="text-center">
-        <h1 class="text-4xl font-bold mb-2" style="font-family: 'Orbitron'">WATCH PARTY</h1>
-        <p class="text-gray-500 text-sm tracking-widest">SYNC & STREAM</p>
-      </div>
-      <div class="space-y-4">
-        <input type="text" id="usernameInput" placeholder="Identify Yourself" class="w-full input-futuristic rounded-lg p-3 text-lg">
-        
-        <div class="flex gap-2">
-          <button id="createBtn" onclick="handleCreate()" class="flex-1 neon-btn py-3 rounded-lg text-lg">Create Room</button>
-          <button onclick="showJoinInput()" class="flex-1 outline-btn font-bold py-3 rounded-lg">Join Room</button>
-        </div>
-        <div id="joinContainer" class="hidden space-y-2">
-          <input type="text" id="roomCodeInput" placeholder="Enter Code" class="w-full input-futuristic rounded-lg p-3 uppercase tracking-widest text-center">
-          <button id="joinBtn" onclick="handleJoin()" class="w-full neon-btn py-3 rounded-lg text-lg">Connect</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PAGE 2: WATCH ROOM -->
-  <div id="watchRoom" class="hidden h-screen w-screen flex relative">
-    
-    <!-- Video Player -->
-    <div class="flex-1 flex flex-col bg-black relative video-wrapper">
-      <video id="mainVideo" class="w-full h-full" playsinline></video>
-      
-      <div id="mobilePlayOverlay" onclick="forcePlay()"><button class="px-6 py-3 neon-btn rounded-lg font-bold">Tap to Play Video</button></div>
-
-      <div class="video-controls flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <button id="playPauseBtn" onclick="togglePlayPause()" class="control-btn p-2 rounded-lg">
-            <svg id="playIcon" class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
-            <svg id="pauseIcon" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-          </button>
-          <span id="timeDisplay" class="text-sm font-mono text-gray-300">0:00 / 0:00</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <button onclick="requestSync()" class="control-btn p-2 rounded-lg text-[var(--primary)] hover:bg-[var(--primary)] hover:text-black">Sync</button>
-          <button onclick="toggleFullscreen()" class="control-btn p-2 rounded-lg">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Sidebar -->
-    <div id="sidebar" class="glass">
-      <div id="sourceControls" class="p-4 border-b border-white/10 space-y-3">
-        <h3 class="text-xs text-gray-400 uppercase tracking-wider">Host Settings</h3>
-        <div class="flex gap-2">
-          <input type="text" id="videoLinkInput" placeholder="Video Link" class="flex-1 input-futuristic text-sm p-2 rounded">
-          <button onclick="loadLink()" class="neon-btn px-3 rounded text-sm">Load</button>
-        </div>
-        <label class="block w-full text-center outline-btn p-2 rounded cursor-pointer text-sm">
-          <input type="file" id="videoUpload" accept="video/*" onchange="uploadVideo(this)" class="hidden">
-          <span id="uploadLabel">Upload Video</span>
-        </label>
-      </div>
-      <div id="guestWaiting" class="hidden p-4 border-b border-white/10 text-center text-gray-400 text-sm">Waiting for Host...</div>
-      
-      <div id="chatBox" class="flex-1 overflow-y-auto chat-scroll p-4 space-y-2 flex flex-col">
-        <div class="w-full p-4 mb-4 rounded-lg bg-black/40 border border-[var(--primary)]/20 text-center flex flex-col items-center justify-center">
-          <span class="text-xs text-gray-500 uppercase tracking-widest">Room Code</span>
-          <div id="displayRoomCodeChat" class="room-code-big mt-1" onclick="copyCode()">------</div>
-        </div>
-        <div id="messagesContainer"></div>
-      </div>
-      
-      <div class="p-4 border-t border-white/10">
-        <div class="flex gap-2">
-          <input type="text" id="chatInput" placeholder="Message..." class="flex-1 input-futuristic text-sm p-2 rounded-full" onkeypress="if(event.key==='Enter')sendMessage()">
-          <button onclick="sendMessage()" class="text-[var(--primary)] hover:text-white p-2 transition-colors">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div id="peerVideosContainer"></div>
-
-    <!-- Vertical Bar -->
-    <div id="verticalBar" class="vertical-bar sidebar-shown">
-      <button onclick="toggleChat()" id="chatToggleBtn" class="icon-btn active" title="Chat">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-      </button>
-      <button onclick="toggleSource()" class="icon-btn" title="Settings">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/></svg>
-      </button>
-      
-      <button id="micBtn" class="icon-btn" title="Mic">
-        <svg id="micOn" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
-        <svg id="micOff" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
-      </button>
-
-      <button onclick="toggleCam()" id="camBtn" class="icon-btn" title="Camera">
-        <svg id="camOn" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-        <svg id="camOff" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-      </button>
-
-      <button onclick="leaveRoom()" class="icon-btn danger" title="Leave">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z"/></svg>
-      </button>
-    </div>
-  </div>
-
-  <script>
-    const socket = io();
-    const video = document.getElementById('mainVideo');
-    const peerVideosContainer = document.getElementById('peerVideosContainer');
-    const sidebar = document.getElementById('sidebar');
-    const verticalBar = document.getElementById('verticalBar');
-    const messagesContainer = document.getElementById('messagesContainer');
-    
-    let myStream, myName, isHost = false, isMicOn = false, isCamOn = false;
-    let isChatOpen = true; 
-    const peers = {}, users = {};
-
-    // --- 1. INIT ---
-    window.onload = () => {
-      document.getElementById('entryPage').style.display = 'flex';
+  socket.on('create-room', (data) => {
+    const roomId = generateRoomId();
+    rooms[roomId] = {
+      host: socket.id,
+      videoSrc: '',
+      welcomeMsg: 'Welcome to the Future!',
+      users: [{ id: socket.id, name: data.name }]
     };
+    socket.join(roomId);
+    socket.roomId = roomId;
+    socket.emit('room-created', { roomId });
+  });
 
-    function addChatMessage(name, msg, color = 'white') {
-      const div = document.createElement('div');
-      div.className = 'chat-message text-sm';
-      div.innerHTML = `<span class="font-bold" style="color:${color}">${name}:</span> ${msg}`;
-      messagesContainer.appendChild(div);
-      document.getElementById('chatBox').scrollTop = 10000;
+  socket.on('set-welcome', (data) => {
+    if (socket.roomId && rooms[socket.roomId] && rooms[socket.roomId].host === socket.id) {
+      rooms[socket.roomId].welcomeMsg = data.msg;
     }
+  });
 
-    function showJoinOverlay(msg) {
-      const overlay = document.getElementById('join-overlay');
-      document.getElementById('join-message-text').innerText = msg || "Welcome!";
-      overlay.style.display = 'flex';
-      setTimeout(() => overlay.style.display = 'none', 3000);
-    }
-
-    function copyCode() {
-        const code = document.getElementById('displayRoomCodeChat').innerText;
-        navigator.clipboard.writeText(code);
-        alert("Room Code Copied: " + code);
-    }
-
-    function showJoinInput() { document.getElementById('joinContainer').classList.toggle('hidden'); }
-
-    // --- 2. PERMISSION & ROOM LOGIC (FIXED) ---
+  socket.on('join-room', (data) => {
+    const room = rooms[data.roomId];
+    if (!room) return socket.emit('error', 'Room not found');
     
-    // NEW LOGIC: Always try to get media, but proceed even if it fails
-    async function getMedia() {
-      try {
-        myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        setupStream(true, true);
-      } catch (err) {
-        try {
-          myStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-          setupStream(false, true);
-        } catch (err2) {
-          console.log("No media devices available. Joining without video/audio.");
-          myStream = null;
-        }
-      }
-    }
-
-    async function handleCreate() {
-      await getMedia(); // Try to get media
-      myName = document.getElementById('usernameInput').value || 'Host';
-      socket.emit('create-room', { name: myName });
-    }
-
-    async function handleJoin() {
-      const roomId = document.getElementById('roomCodeInput').value;
-      if(!roomId) return alert('Enter code');
-      
-      await getMedia(); // Try to get media
-      myName = document.getElementById('usernameInput').value || 'Guest';
-      socket.emit('join-room', { roomId: roomId, name: myName });
-    }
+    socket.roomId = data.roomId;
+    socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
     
-    function setupStream(hasVideo, micOn) {
-        isMicOn = micOn;
-        if(myStream) myStream.getAudioTracks()[0].enabled = micOn;
-        if(hasVideo && myStream) {
-            isCamOn = false;
-            myStream.getVideoTracks()[0].enabled = false; 
-        }
-        updateMicUI();
-        updateCamUI();
-    }
+    room.users.push({ id: socket.id, name: data.name });
+    socket.join(data.roomId);
     
-    socket.on('room-created', (data) => { isHost = true; initRoom(data.roomId); });
-    
-    socket.on('room-joined', (data) => { 
-      isHost = false; 
-      initRoom(data.roomId); 
-      if(data.welcomeMsg) showJoinOverlay(data.welcomeMsg);
-      if(data.videoSrc && data.videoSrc.length > 0) {
-        video.src = data.videoSrc;
-        document.getElementById('guestWaiting').classList.add('hidden');
-        video.play().catch(e => document.getElementById('mobilePlayOverlay').style.display = 'flex');
-      } else {
-        document.getElementById('guestWaiting').classList.remove('hidden');
-      }
-      socket.emit('request-state');
+    socket.emit('room-joined', { 
+      roomId: data.roomId, 
+      videoSrc: room.videoSrc,
+      welcomeMsg: room.welcomeMsg,
+      users: room.users 
     });
-    
-    socket.on('error', (msg) => alert(msg));
-    
-    function initRoom(id) {
-      document.getElementById('entryPage').style.display = 'none';
-      document.getElementById('watchRoom').classList.remove('hidden');
-      document.getElementById('displayRoomCodeChat').innerText = id;
-      
-      if (!isHost) document.getElementById('sourceControls').classList.add('hidden');
-      else document.getElementById('guestWaiting').classList.add('hidden');
-      
-      if(window.innerWidth <= 768) {
-          isChatOpen = false;
-          sidebar.classList.remove('open');
-          sidebar.classList.add('hidden');
-      } else {
-          isChatOpen = true;
-          sidebar.classList.remove('hidden');
-          verticalBar.classList.remove('sidebar-hidden');
-      }
-    }
-    
-    function leaveRoom() { window.location.reload(); }
-    function forcePlay() {
-        video.play();
-        document.getElementById('mobilePlayOverlay').style.display = 'none';
-    }
+  });
 
-    // --- 3. VIDEO SYNC ---
-    function togglePlayPause() { if(video.paused) video.play(); else video.pause(); }
-    video.onplay = () => { document.getElementById('mobilePlayOverlay').style.display = 'none'; updateIcons(); if(isHost) socket.emit('sync-video', { type: 'play', time: video.currentTime }); };
-    video.onpause = () => { updateIcons(); if(isHost) socket.emit('sync-video', { type: 'pause', time: video.currentTime }); };
-    function updateIcons() { document.getElementById('playIcon').classList.toggle('hidden', !video.paused); document.getElementById('pauseIcon').classList.toggle('hidden', video.paused); }
-    setInterval(() => {
-      const ct = Math.floor(video.currentTime); const d = Math.floor(video.duration);
-      document.getElementById('timeDisplay').innerText = `${Math.floor(ct/60)}:${ct%60<10?'0':''}${ct%60} / ${Math.floor(d/60)}:${d%60<10?'0':''}${d%60}`;
-    }, 1000);
-    function toggleFullscreen() { const w = document.getElementById('watchRoom'); if(!document.fullscreenElement) w.requestFullscreen(); else document.exitFullscreen(); }
-    
-    socket.on('sync-video', (data) => {
-      if(!video.src) return;
-      if(data.type === 'play') video.play();
-      if(data.type === 'pause') video.pause();
-      if(data.time && Math.abs(video.currentTime - data.time) > 1) video.currentTime = data.time;
-    });
-    
-    function requestSync() { socket.emit('request-state'); }
-    socket.on('get-state', (data) => socket.emit('send-state', { to: data.requester, time: video.currentTime, playing: !video.paused }));
+  socket.on('signal', (data) => io.to(data.to).emit('signal', { from: socket.id, signal: data.signal }));
 
-    // --- 4. SOURCE & CHAT ---
-    function toggleSource() { if(isHost) document.getElementById('sourceControls').classList.toggle('hidden'); }
-    function loadLink() {
-      if(!isHost) return;
-      video.src = document.getElementById('videoLinkInput').value;
-      socket.emit('change-src', { src: video.src });
+  socket.on('change-src', (data) => {
+    if (socket.roomId && rooms[socket.roomId]) {
+      rooms[socket.roomId].videoSrc = data.src;
+      socket.broadcast.to(socket.roomId).emit('update-src', { src: data.src });
     }
-    function uploadVideo(input) {
-      if(!isHost) return;
-      const formData = new FormData();
-      formData.append('video', input.files[0]);
-      document.getElementById('uploadLabel').innerText = "Uploading...";
-      fetch('/upload', { method: 'POST', body: formData }).then(r => r.json()).then(data => {
-        video.src = data.filePath;
-        socket.emit('change-src', { src: data.filePath });
-        document.getElementById('uploadLabel').innerText = "Upload Video";
-      });
+  });
+
+  socket.on('sync-video', (data) => {
+    if(socket.roomId) socket.broadcast.to(socket.roomId).emit('sync-video', data);
+  });
+
+  socket.on('request-state', () => {
+    if (socket.roomId && rooms[socket.roomId]) {
+      socket.to(rooms[socket.roomId].host).emit('get-state', { requester: socket.id });
     }
-    socket.on('update-src', (data) => {
-      video.src = data.src;
-      document.getElementById('guestWaiting').classList.add('hidden');
-      video.play().catch(e => document.getElementById('mobilePlayOverlay').style.display = 'flex');
-    });
+  });
 
-    function sendMessage() {
-      const input = document.getElementById('chatInput');
-      if(!input.value.trim()) return;
-      socket.emit('chat-message', { name: myName, msg: input.value });
-      input.value = '';
-    }
-    socket.on('chat-message', (data) => addChatMessage(data.name, data.msg, '#00d4aa'));
+  socket.on('send-state', (data) => {
+    io.to(data.to).emit('sync-video', { type: 'seek', time: data.time });
+    if(data.playing) io.to(data.to).emit('sync-video', { type: 'play' });
+  });
 
-    function toggleChat() {
-      const sidebar = document.getElementById('sidebar');
-      const bar = document.getElementById('verticalBar');
-      
-      if(window.innerWidth > 768) {
-          sidebar.classList.toggle('hidden');
-          bar.classList.toggle('sidebar-hidden');
-      } else {
-          if(sidebar.classList.contains('open')) {
-              sidebar.classList.remove('open');
-              setTimeout(() => sidebar.classList.add('hidden'), 300);
-          } else {
-              sidebar.classList.remove('hidden');
-              setTimeout(() => sidebar.classList.add('open'), 10);
-          }
-      }
-    }
+  socket.on('chat-message', (data) => {
+    if(socket.roomId) io.to(socket.roomId).emit('chat-message', data);
+  });
 
-    // --- 5. CALL SYSTEM ---
-    
-    function updateMicUI() {
-      const track = myStream ? myStream.getAudioTracks()[0] : null;
-      isMicOn = track ? track.enabled : false;
-      document.getElementById('micOn').classList.toggle('hidden', !isMicOn);
-      document.getElementById('micOff').classList.toggle('hidden', isMicOn);
-      document.getElementById('micBtn').classList.toggle('active', isMicOn);
-    }
+  socket.on('disconnect', () => console.log('User disconnected:', socket.id));
+});
 
-    function updateCamUI() {
-      const tracks = myStream ? myStream.getVideoTracks() : [];
-      isCamOn = tracks.length > 0 ? tracks[0].enabled : false;
-      document.getElementById('camOn').classList.toggle('hidden', !isCamOn);
-      document.getElementById('camOff').classList.toggle('hidden', isCamOn);
-      document.getElementById('camBtn').classList.toggle('active', isCamOn);
-    }
+function generateRoomId() { return Math.random().toString(36).substring(2, 8).toUpperCase(); }
 
-    function toggleMic() {
-      if(!myStream) return alert("No microphone available.");
-      const track = myStream.getAudioTracks()[0];
-      if(track) track.enabled = !track.enabled;
-      updateMicUI();
-    }
-
-    function toggleCam() { 
-      if(!myStream) return alert("No camera available.");
-      const tracks = myStream.getVideoTracks();
-      if(tracks.length > 0) tracks[0].enabled = !tracks[0].enabled;
-      updateCamUI();
-    }
-
-    document.getElementById('micBtn').onclick = toggleMic;
-    
-    socket.on('user-joined', async (data) => {
-      if(isHost) {
-        const pc = createPeerConnection(data.id);
-        peers[data.id] = pc;
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('signal', { to: data.id, signal: { sdp: offer } });
-      }
-      users[data.id] = data.name;
-      addChatMessage('System', `${data.name} joined`, '#888');
-    });
-
-    socket.on('signal', async (data) => {
-      const fromId = data.from;
-      if (!peers[fromId]) { 
-        const pc = createPeerConnection(fromId); 
-        peers[fromId] = pc; 
-      }
-      const pc = peers[fromId];
-      
-      try {
-        if (data.signal.sdp) {
-          await pc.setRemoteDescription(new RTCSessionDescription(data.signal.sdp));
-          if (pc.remoteDescription.type === 'offer') {
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            socket.emit('signal', { to: fromId, signal: { sdp: answer } });
-          }
-        } else if (data.signal.candidate) {
-          await pc.addIceCandidate(new RTCIceCandidate(data.signal.candidate));
-        }
-      } catch (e) {
-        console.error("Signal Error", e);
-      }
-    });
-
-    function createPeerConnection(peerId) {
-      const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-      const pc = new RTCPeerConnection(config);
-      
-      if(myStream) myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
-      
-      pc.ontrack = (event) => {
-        let videoEl = document.getElementById(`video-${peerId}`);
-        if (!videoEl) {
-          const div = document.createElement('div'); div.className = 'peer-video'; div.id = `container-${peerId}`;
-          videoEl = document.createElement('video'); 
-          videoEl.id = `video-${peerId}`; 
-          videoEl.autoplay = true; 
-          videoEl.playsInline = true;
-          
-          const nameTag = document.createElement('div'); nameTag.className = 'peer-name'; nameTag.innerText = users[peerId] || 'Guest';
-          div.appendChild(videoEl); div.appendChild(nameTag); peerVideosContainer.appendChild(div);
-        }
-        
-        if (videoEl.srcObject !== event.streams[0]) {
-          videoEl.srcObject = event.streams[0];
-          videoEl.play().catch(e => console.log("Autoplay prevented", e));
-        }
-      };
-      
-      pc.onicecandidate = (event) => { 
-        if (event.candidate) socket.emit('signal', { to: peerId, signal: { candidate: event.candidate } }); 
-      };
-      
-      return pc;
-    }
-  </script>
-</body>
-</html>
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
