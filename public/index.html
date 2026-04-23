@@ -2,308 +2,318 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Watch-Night | Game Zone</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Watch-Night | Hub</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/socket.io/socket.io.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
   <style>
     :root { --primary: #00f3ff; --secondary: #bc13fe; --bg: #050505; }
-    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow: hidden; }
+    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow-x: hidden; }
     
-    @keyframes fadeIn { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
-    @keyframes glowPulse { 0% { box-shadow: 0 0 20px var(--primary); } 50% { box-shadow: 0 0 40px var(--primary), 0 0 60px var(--secondary); } 100% { box-shadow: 0 0 20px var(--primary); } }
-
+    /* Gate Styles */
+    #nameGate { position: fixed; inset: 0; z-index: 99999; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; opacity: 0; visibility: hidden; transition: all 0.5s ease; }
+    #nameGate.show { opacity: 1; visibility: visible; }
+    .gate-box { background: rgba(10, 10, 10, 0.95); border: 2px solid var(--primary); padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 0 50px rgba(0, 243, 255, 0.2); transform: scale(0.9); transition: transform 0.3s; }
+    #nameGate.show .gate-box { transform: scale(1); }
+    
+    /* Splash & Animations */
+    @keyframes fadeInUp { 0% { opacity: 0; transform: translateY(30px); } 100% { opacity: 1; transform: translateY(0); } }
+    @keyframes bgPan { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+    
+    /* Splash logic */
+    #splash-screen { position: fixed; inset: 0; z-index: 9998; background: radial-gradient(circle at center, #0a0a12 0%, #000000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 1s ease, visibility 1s ease; }
+    #splash-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    
+    .splash-bg-effect { position: absolute; width: 150%; height: 150%; background: radial-gradient(circle, transparent 0%, #000 80%), linear-gradient(0deg, transparent 24%, var(--primary) 25%, var(--primary) 26%, transparent 27%, transparent 74%, var(--primary) 75%, var(--primary) 76%, transparent 77%, transparent), linear-gradient(90deg, transparent 24%, var(--primary) 25%, var(--primary) 26%, transparent 27%, transparent 74%, var(--primary) 75%, var(--primary) 76%, transparent 77%, transparent); background-size: 100% 100%, 50px 50px, 50px 50px; opacity: 0.05; z-index: 0; animation: bgPan 10s linear infinite; }
+    
     .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
     .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; border: none; }
     .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--primary); transform: translateY(-2px); }
-    
     .outline-btn { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: white; transition: all 0.3s; }
     .outline-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(0, 243, 255, 0.05); }
-
+    .outline-btn.active { border-color: var(--primary); background: rgba(0, 243, 255, 0.1); color: var(--primary); }
     .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; transition: all 0.3s; }
-    .input-futuristic:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 10px rgba(0, 243, 255, 0.2); }
+    .input-futuristic:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 15px rgba(0, 243, 255, 0.2); }
+    .anim-fade-in { animation: fadeInUp 0.6s ease forwards; opacity: 0; }
 
-    .anim-fade-in { animation: fadeIn 0.5s ease forwards; }
-    
-    /* Game Specific */
-    .ttt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 260px; height: 260px; }
-    .ttt-cell { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron', sans-serif; font-size: 3.5rem; transition: all 0.2s; }
-    .ttt-cell:hover { background: rgba(255,255,255,0.1); cursor: pointer; }
-    .ttt-cell.x { color: var(--primary); text-shadow: 0 0 20px var(--primary); }
-    .ttt-cell.o { color: var(--secondary); text-shadow: 0 0 20px var(--secondary); }
-    .ttt-cell.win { animation: glowPulse 1s infinite; background: rgba(255,255,255,0.1); }
-    
-    .reflex-box { transition: background 0.2s; }
-    .reflex-go { background: rgba(0, 243, 255, 0.4) !important; border-color: white !important; }
-    .reflex-wait { background: rgba(188, 19, 254, 0.1) !important; }
+    /* Global Voice UI */
+    #globalVoiceBar { position: fixed; bottom: 0; left: 0; right: 0; height: 60px; background: rgba(10, 10, 10, 0.95); border-top: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; gap: 20px; padding: 0 20px; z-index: 100; backdrop-filter: blur(10px); transform: translateY(100%); transition: transform 0.3s; }
+    #globalVoiceBar.active { transform: translateY(0); }
+    .voice-user { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; padding: 4px 12px; background: rgba(255,255,255,0.05); border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); }
   </style>
 </head>
-<body class="h-screen w-screen flex flex-col">
+<body>
 
-  <!-- LOBBY SCREEN -->
-  <div id="lobbyScreen" class="h-full w-full flex flex-col items-center justify-center p-6">
-    <div class="glass p-8 rounded-2xl w-full max-w-md space-y-6 border-l-4 border-l-[var(--primary)] relative overflow-hidden anim-fade-in">
-      <div class="text-center">
-        <h1 class="text-4xl font-bold mb-2" style="font-family: 'Orbitron'">GAME ZONE</h1>
-        <p class="text-gray-500 text-sm">Play with friends online</p>
-      </div>
-      
-      <div class="space-y-4">
-        <input type="text" id="usernameInput" placeholder="Enter Your Name" class="w-full input-futuristic rounded-lg p-3 text-lg">
-        
-        <div class="flex gap-2">
-          <button onclick="handleCreate()" class="flex-1 neon-btn py-3 rounded-lg text-lg">Create Room</button>
-          <button onclick="showJoinInput()" class="flex-1 outline-btn font-bold py-3 rounded-lg">Join Room</button>
-        </div>
-        <div id="joinContainer" class="hidden space-y-2">
-          <input type="text" id="roomCodeInput" placeholder="Enter Room Code" class="w-full input-futuristic rounded-lg p-3 uppercase tracking-widest text-center">
-          <button onclick="handleJoin()" class="w-full neon-btn py-3 rounded-lg text-lg">Connect</button>
-        </div>
-      </div>
-      <a href="/" class="block text-center text-gray-500 hover:text-white text-xs mt-4">← Back to Hub</a>
+  <!-- 1. SPLASH SCREEN (Visible First) -->
+  <div id="splash-screen">
+    <div class="splash-bg-effect"></div>
+    <div class="text-lg tracking-widest text-gray-400 uppercase anim-fade-in" style="animation-delay: 0.2s">Welcome to</div>
+    <div class="text-8xl md:text-9xl font-black text-white my-4 anim-fade-in" style="font-family: 'Orbitron'; animation-delay: 0.4s">WATCH<br><span class="text-[var(--primary)]">NIGHT</span></div>
+    <div class="text-2xl md:text-3xl font-bold text-gray-300 mt-8 anim-fade-in" style="animation-delay: 0.6s">
+      Made with <span class="text-red-500 text-3xl">❤</span> by <span class="text-[var(--primary)]">Nikhil (Nixton)</span>
     </div>
   </div>
 
-  <!-- WAITING SCREEN -->
-  <div id="waitingScreen" class="hidden h-full w-full flex flex-col items-center justify-center p-6">
-    <div class="text-center anim-fade-in">
-      <h2 class="text-3xl font-bold mb-4" style="font-family: 'Orbitron'">Waiting for Opponent</h2>
-      <div class="w-16 h-16 border-4 border-t-[var(--primary)] border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mx-auto mb-6"></div>
-      <p class="text-gray-400 text-sm mb-2">Share this code:</p>
-      <div id="roomCodeDisplay" class="text-4xl font-bold tracking-widest text-[var(--primary)]" style="font-family: 'Orbitron'">------</div>
+  <!-- 2. NAME GATE (Pops up AFTER Splash) -->
+  <div id="nameGate">
+    <div class="gate-box">
+      <h1 class="text-3xl font-bold text-white mb-2" style="font-family: 'Orbitron'">Identify Yourself</h1>
+      <p class="text-gray-400 mb-6 text-sm">Enter your name to continue</p>
+      <input type="text" id="gateNameInput" placeholder="Your Name..." class="input-futuristic rounded-lg p-3 text-xl text-center w-64 mb-4" autofocus>
+      <button onclick="enterHub()" class="neon-btn px-8 py-3 rounded-lg text-lg w-full">Enter Hub</button>
     </div>
   </div>
 
-  <!-- GAME ARENA -->
-  <div id="gameArena" class="hidden h-full w-full flex flex-col">
-    <!-- Header -->
-    <header class="glass p-3 border-b border-white/10 flex justify-between items-center">
-      <div id="p1Info" class="flex items-center gap-2">
-        <span class="text-xs opacity-50">YOU</span>
-        <span id="myName" class="font-bold text-[var(--primary)]">Player</span>
-      </div>
-      <div class="text-center">
-        <span id="turnIndicator" class="text-xs bg-black/50 px-2 py-1 rounded">Waiting...</span>
-      </div>
-      <div id="p2Info" class="flex items-center gap-2">
-        <span id="oppName" class="font-bold text-[var(--secondary)]">Opponent</span>
-        <span class="text-xs opacity-50">ENEMY</span>
-      </div>
-    </header>
-
-    <!-- Game Content -->
-    <main id="gameContent" class="flex-1 flex flex-col items-center justify-center p-4">
-      <!-- Dynamic Game Content Injected Here -->
-    </main>
+  <!-- 3. MAIN HUB -->
+  <div id="mainHub" class="min-h-screen w-screen flex flex-col items-center justify-center p-6 pb-24 opacity-0 transition-opacity duration-1000">
     
-    <!-- Footer -->
-    <footer class="p-4 text-center">
-      <button onclick="leaveGame()" class="text-gray-500 hover:text-red-500 text-xs uppercase tracking-widest">Leave Room</button>
-    </footer>
+    <!-- Header -->
+    <div class="absolute top-4 right-4 flex items-center gap-3">
+      <span id="headerName" class="text-sm text-gray-400"></span>
+      <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-[var(--primary)] to-[var(--secondary)] flex items-center justify-center font-bold text-black text-xs" id="headerAvatar">?</div>
+    </div>
+
+    <div class="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-8">
+      
+      <!-- WATCH TOGETHER -->
+      <div class="glass rounded-2xl p-6 border border-white/10 flex flex-col anim-fade-in" style="animation-delay: 0.1s">
+        <div class="flex items-center gap-4 mb-6">
+          <div class="text-5xl">🎬</div>
+          <div>
+            <h2 class="text-2xl font-bold" style="font-family: 'Orbitron'">Watch Together</h2>
+            <p class="text-gray-500 text-sm">Stream videos in sync</p>
+          </div>
+        </div>
+        <div class="space-y-3">
+          <button onclick="createRoom('watch')" class="w-full neon-btn py-3 rounded-xl text-lg">Create Room</button>
+          <div class="flex gap-2">
+            <input type="text" id="watchCode" placeholder="Enter Code" class="flex-1 input-futuristic rounded-xl p-3 uppercase text-center text-lg tracking-widest">
+            <button onclick="joinRoom('watch')" class="outline-btn px-6 rounded-xl font-bold">Join</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- GAME ZONE -->
+      <div class="glass rounded-2xl p-6 border border-white/10 flex flex-col anim-fade-in" style="animation-delay: 0.2s">
+        <div class="flex items-center gap-4 mb-4">
+          <div class="text-5xl">🎮</div>
+          <div>
+            <h2 class="text-2xl font-bold" style="font-family: 'Orbitron'">Game Zone</h2>
+            <p class="text-gray-500 text-sm">Play with friends</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <button onclick="selectGame('tictactoe')" id="btn-ttt" class="outline-btn p-3 rounded-xl flex flex-col items-center active">
+            <span class="text-3xl mb-1">⭕</span>
+            <span class="text-xs font-bold uppercase tracking-wider">Tic Tac Toe</span>
+          </button>
+          <button onclick="selectGame('reflex')" id="btn-reflex" class="outline-btn p-3 rounded-xl flex flex-col items-center">
+            <span class="text-3xl mb-1">⚡</span>
+            <span class="text-xs font-bold uppercase tracking-wider">Reflex Duel</span>
+          </button>
+        </div>
+
+        <div class="space-y-3">
+          <button onclick="createRoom('game')" class="w-full neon-btn py-3 rounded-xl text-lg">Create Game</button>
+          <div class="flex gap-2">
+            <input type="text" id="gameCode" placeholder="Enter Code" class="flex-1 input-futuristic rounded-xl p-3 uppercase text-center text-lg tracking-widest">
+            <button onclick="joinRoom('game')" class="outline-btn px-6 rounded-xl font-bold">Join</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 4. GLOBAL VOICE BAR (Common Audio) -->
+  <div id="globalVoiceBar">
+    <div class="flex items-center gap-2 text-gray-400">
+      <span class="animate-pulse">🔵</span> Global Lobby
+    </div>
+    <div id="lobbyUsers" class="flex gap-3 flex-1 overflow-x-auto px-4"></div>
+    <button onclick="toggleMic()" id="micBtn" class="outline-btn px-4 py-2 rounded-lg text-sm">🎤</button>
   </div>
 
   <script>
     const socket = io();
-    let myData = { name: '', symbol: '', id: '' };
-    let currentRoom = null;
+    let myData = { name: '', uid: '' };
+    let myStream;
+    let isMicOn = false;
+    const peers = {}; 
+    let selectedGameType = 'tictactoe';
 
-    // --- LOBBY LOGIC ---
-    function showJoinInput() { document.getElementById('joinContainer').classList.toggle('hidden'); }
+    // --- 1. FLOW CONTROL ---
+    window.onload = () => {
+      // 1. Check if returning user has name
+      const savedName = localStorage.getItem('watchNightName');
+      if(savedName) document.getElementById('gateNameInput').value = savedName;
 
-    function handleCreate() {
-      const name = document.getElementById('usernameInput').value || 'Player';
-      myData.name = name;
-      socket.emit('create-game-room', { name });
-    }
+      // 2. Let Splash Animation Run (Wait 3.5 seconds)
+      setTimeout(() => {
+        // 3. Hide Splash
+        document.getElementById('splash-screen').classList.add('hidden');
+        
+        // 4. Show Name Gate (After Splash fades)
+        setTimeout(() => {
+          document.getElementById('nameGate').classList.add('show');
+        }, 1000); // Wait for splash opacity transition
+        
+      }, 3500); // Duration of splash display
+    };
 
-    function handleJoin() {
-      const name = document.getElementById('usernameInput').value || 'Player';
-      const roomId = document.getElementById('roomCodeInput').value.toUpperCase();
-      if(!roomId) return;
-      myData.name = name;
-      socket.emit('join-game-room', { roomId, name });
-    }
-
-    socket.on('game-room-created', (data) => {
-      currentRoom = data.roomId;
-      myData.symbol = 'X';
-      document.getElementById('lobbyScreen').classList.add('hidden');
-      document.getElementById('waitingScreen').classList.remove('hidden');
-      document.getElementById('roomCodeDisplay').innerText = data.roomId;
-    });
-
-    socket.on('game-room-joined', (data) => {
-      currentRoom = data.roomId;
-      myData.symbol = 'O';
-    });
-
-    socket.on('game-error', (msg) => {
-      alert(msg);
-    });
-
-    // --- GAME START ---
-    socket.on('game-start', (data) => {
-      document.getElementById('lobbyScreen').classList.add('hidden');
-      document.getElementById('waitingScreen').classList.add('hidden');
-      document.getElementById('gameArena').classList.remove('hidden');
+    function enterHub() {
+      const val = document.getElementById('gateNameInput').value.trim();
+      if (!val) return alert("Name is required");
       
-      // Setup Header
-      const me = data.players.find(p => p.symbol === myData.symbol);
-      const opponent = data.players.find(p => p.symbol !== myData.symbol);
-      
-      document.getElementById('myName').innerText = me.name;
-      document.getElementById('oppName').innerText = opponent.name;
-      
-      // Show Game Selection (Only Host/X chooses)
-      if(myData.symbol === 'X') {
-        showGameSelection();
-      } else {
-        document.getElementById('gameContent').innerHTML = `
-          <div class="text-center">
-            <div class="text-4xl mb-4 animate-pulse">⏳</div>
-            <p class="text-gray-400">Waiting for Host to pick a game...</p>
-          </div>
-        `;
-      }
-    });
+      myData.name = val;
+      myData.uid = localStorage.getItem('watchNightUid') || Math.random().toString(36).substring(2, 10);
+      localStorage.setItem('watchNightName', myData.name);
+      localStorage.setItem('watchNightUid', myData.uid);
 
-    function showGameSelection() {
-      const html = `
-        <div class="text-center anim-fade-in">
-          <h3 class="text-2xl font-bold mb-6">Pick a Game</h3>
-          <div class="flex flex-col gap-4 w-64">
-            <button onclick="selectGame('tictactoe')" class="neon-btn py-4 rounded-xl text-xl">⭕ Tic Tac Toe</button>
-            <button onclick="selectGame('reflex')" class="neon-btn py-4 rounded-xl text-xl">⚡ Reflex Duel</button>
-          </div>
-        </div>
-      `;
-      document.getElementById('gameContent').innerHTML = html;
+      // Hide Gate
+      document.getElementById('nameGate').classList.remove('show');
+
+      // Show Hub
+      setTimeout(() => {
+        document.getElementById('mainHub').style.opacity = '1';
+        document.getElementById('headerName').innerText = myData.name;
+        document.getElementById('headerAvatar').innerText = myData.name.charAt(0).toUpperCase();
+        
+        initGlobalVoice(); // Auto-connect Voice
+      }, 300);
     }
 
-    function selectGame(type) {
-      socket.emit('select-game', { type, roomId: currentRoom });
+    // --- 2. GLOBAL VOICE SYSTEM ---
+    async function initGlobalVoice() {
+      try {
+        myStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        isMicOn = true;
+        updateMicUI();
+        
+        socket.emit('join-lobby', { name: myData.name, uid: myData.uid });
+        document.getElementById('globalVoiceBar').classList.add('active');
+      } catch(e) { console.log("Mic denied"); }
     }
 
-    socket.on('game-selected', (type) => {
-      if(type === 'tictactoe') initTTT();
-      if(type === 'reflex') initReflex();
-    });
-
-    function leaveGame() {
-      window.location.reload();
+    function toggleMic() {
+      isMicOn = !isMicOn;
+      if(myStream) myStream.getAudioTracks()[0].enabled = isMicOn;
+      updateMicUI();
     }
 
-    // --- TIC TAC TOE ---
-    let tttBoard = Array(9).fill(null);
+    function updateMicUI() {
+      const btn = document.getElementById('micBtn');
+      btn.innerText = isMicOn ? '🎤' : '🔇';
+      btn.classList.toggle('neon-btn', isMicOn);
+    }
+
+    // --- 3. WEBRTC SIGNALING ---
+    function createPeerConnection(userId) {
+      if (peers[userId]) return;
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      peers[userId] = pc;
+
+      if (myStream) myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
+
+      pc.ontrack = (event) => {
+        let audio = document.getElementById(`audio-${userId}`);
+        if (!audio) {
+          audio = document.createElement('audio');
+          audio.id = `audio-${userId}`;
+          audio.autoplay = true;
+          document.body.appendChild(audio);
+        }
+        audio.srcObject = event.streams[0];
+      };
+
+      pc.onicecandidate = (e) => {
+        if (e.candidate) socket.emit('signal', { to: userId, signal: e.candidate });
+      };
+
+      pc.onnegotiationneeded = async () => {
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit('signal', { to: userId, signal: offer });
+        } catch (err) { console.error(err); }
+      };
+    }
+
+    // --- 4. SOCKET EVENTS ---
     
-    function initTTT() {
-      tttBoard = Array(9).fill(null);
-      renderTTT();
-    }
-
-    function renderTTT(turn = 'X', winnerInfo = null) {
-      const isMyTurn = turn === myData.symbol;
-      document.getElementById('turnIndicator').innerText = isMyTurn ? "Your Turn!" : "Opponent's Turn";
-      document.getElementById('turnIndicator').className = `text-xs px-2 py-1 rounded ${isMyTurn ? 'bg-[var(--primary)] text-black font-bold' : 'bg-black/50'}`;
-
-      let html = `<div class="ttt-grid">`;
-      tttBoard.forEach((cell, i) => {
-        const isWinning = winnerInfo && winnerInfo.includes(i);
-        const canClick = !cell && isMyTurn && !winnerInfo;
-        html += `
-          <div class="ttt-cell ${cell === 'X' ? 'x' : 'o'} ${isWinning ? 'win' : ''}" 
-               onclick="${canClick ? `sendTTTMove(${i})` : ''}">
-            ${cell || ''}
-          </div>
-        `;
+    socket.on('lobby-users', (users) => {
+      const container = document.getElementById('lobbyUsers');
+      container.innerHTML = '';
+      users.forEach(u => {
+        if (u.uid === myData.uid) return;
+        const div = document.createElement('div');
+        div.className = 'voice-user';
+        div.innerHTML = `<span>🔊</span> ${u.name}`;
+        container.appendChild(div);
+        createPeerConnection(u.id);
       });
-      html += `</div>`;
-      
-      if(winnerInfo) {
-        const won = winnerInfo === 'draw' ? false : (tttBoard[winnerInfo[0]] === myData.symbol);
-        html += `
-          <div class="mt-6 text-center">
-            <h3 class="text-2xl font-bold ${winnerInfo === 'draw' ? 'text-gray-400' : (won ? 'text-green-400' : 'text-red-400')}">
-              ${winnerInfo === 'draw' ? 'Draw!' : (won ? 'You Win!' : 'You Lose!')}
-            </h3>
-            <button onclick="selectGame('tictactoe')" class="mt-4 neon-btn px-6 py-2 rounded-lg">Play Again</button>
-          </div>
-        `;
-      }
-      
-      document.getElementById('gameContent').innerHTML = html;
-    }
-
-    function sendTTTMove(index) {
-      socket.emit('ttt-move', { index, roomId: currentRoom });
-    }
-
-    socket.on('ttt-update', (data) => {
-      tttBoard = data.board;
-      renderTTT(data.turn, data.line || data.winner);
     });
 
-    // --- REFLEX DUEL ---
-    function initReflex() {
-      const html = `
-        <div class="flex flex-col items-center justify-center h-full w-full anim-fade-in">
-          <div id="reflexBox" class="w-64 h-64 glass border-2 border-white/20 rounded-2xl flex items-center justify-center flex-col cursor-pointer reflex-wait">
-            <p class="text-2xl font-bold">WAIT</p>
-          </div>
-          <button id="reflexStartBtn" onclick="startReflexRound()" class="neon-btn px-8 py-3 rounded-xl text-xl mt-6">Start Round</button>
-          <p id="reflexMsg" class="h-6 mt-4 text-lg font-bold text-gray-400"></p>
-        </div>
-      `;
-      document.getElementById('gameContent').innerHTML = html;
-    }
-
-    function startReflexRound() {
-      document.getElementById('reflexStartBtn').style.display = 'none';
-      document.getElementById('reflexMsg').innerText = "Wait for GREEN...";
-      socket.emit('start-reflex-round', { roomId: currentRoom });
-    }
-
-    socket.on('reflex-state', (data) => {
-      const box = document.getElementById('reflexBox');
-      const msg = document.getElementById('reflexMsg');
-      
-      if(data.status === 'waiting') {
-        box.className = "w-64 h-64 glass border-2 border-white/20 rounded-2xl flex items-center justify-center flex-col cursor-pointer reflex-wait";
-        box.innerHTML = `<p class="text-2xl font-bold text-[var(--secondary)]">WAIT</p>`;
-        box.onclick = () => sendReflexTap(); // Handle early tap locally? No, let server handle logic but visually allow tap
-      } else if(data.status === 'go') {
-        box.className = "w-64 h-64 glass border-2 border-white rounded-2xl flex items-center justify-center flex-col cursor-pointer reflex-go";
-        box.innerHTML = `<p class="text-2xl font-bold text-black">GO!</p>`;
-        msg.innerText = "TAP NOW!";
-        msg.className = "h-6 mt-4 text-lg font-bold text-green-400";
-      }
+    socket.on('signal', async (data) => {
+      if (!peers[data.from]) createPeerConnection(data.from);
+      const pc = peers[data.from];
+      try {
+        if (data.signal.type === 'offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          socket.emit('signal', { to: data.from, signal: answer });
+        } else if (data.signal.type === 'answer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+        } else if (data.signal.candidate) {
+          await pc.addIceCandidate(new RTCIceCandidate(data.signal));
+        }
+      } catch (err) { console.error(err); }
     });
 
-    function sendReflexTap() {
-      socket.emit('reflex-tap', { roomId: currentRoom });
+    socket.on('user-disconnected', (id) => {
+      if (peers[id]) { peers[id].close(); delete peers[id]; }
+      const audioEl = document.getElementById(`audio-${id}`);
+      if (audioEl) audioEl.remove();
+    });
+
+    // --- 5. NAVIGATION FUNCTIONS ---
+    
+    function selectGame(type) {
+      selectedGameType = type;
+      document.getElementById('btn-ttt').classList.toggle('active', type === 'tictactoe');
+      document.getElementById('btn-reflex').classList.toggle('active', type === 'reflex');
     }
 
-    socket.on('reflex-result', (data) => {
-      const box = document.getElementById('reflexBox');
-      const msg = document.getElementById('reflexMsg');
-      const btn = document.getElementById('reflexStartBtn');
-      
-      box.onclick = null; // Disable further taps
-      
-      if(data.reason === 'early') {
-        msg.innerText = "Too Early! You lose.";
-        msg.className = "h-6 mt-4 text-lg font-bold text-red-500";
+    function generateUID() {
+      return Math.random().toString(36).substring(2, 8).toUpperCase();
+    }
+
+    function createRoom(type) {
+      const roomId = generateUID();
+      redirectTo(type, roomId, 'create');
+    }
+
+    function joinRoom(type) {
+      let code = '';
+      if (type === 'watch') code = document.getElementById('watchCode').value.toUpperCase();
+      else code = document.getElementById('gameCode').value.toUpperCase();
+
+      if (!code) return alert("Please enter a code");
+      redirectTo(type, code, 'join');
+    }
+
+    function redirectTo(type, code, action) {
+      let url = '';
+      if (type === 'watch') {
+        url = `/watch.html?action=${action}&room=${code}&name=${encodeURIComponent(myData.name)}`;
       } else {
-        const won = data.winner === socket.id;
-        msg.innerText = won ? "You Win! ⚡" : "Too Slow!";
-        msg.className = `h-6 mt-4 text-lg font-bold ${won ? 'text-green-400' : 'text-red-400'}`;
+        url = `/game.html?action=${action}&room=${code}&name=${encodeURIComponent(myData.name)}&game=${selectedGameType}`;
       }
-      
-      btn.style.display = 'block';
-      btn.innerText = "Play Again";
-    });
-
+      window.location.href = url;
+    }
   </script>
 </body>
 </html>
