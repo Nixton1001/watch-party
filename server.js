@@ -68,8 +68,8 @@ app.use((err, req, res, next) => {
 });
 
 // --- IN-MEMORY STORAGE ---
-const rooms = {};      
-const gameRooms = {}; 
+const rooms = {};      // Watch Party Rooms
+const gameRooms = {};  // Game Zone Rooms
 
 // --- SOCKET LOGIC ---
 io.on('connection', (socket) => {
@@ -105,25 +105,21 @@ io.on('connection', (socket) => {
   });
 
   socket.on('set-welcome-msg', (data) => { if (socket.roomId && rooms[socket.roomId]) rooms[socket.roomId].welcomeMsg = data.msg; });
-  socket.on('signal', (data) => io.to(data.to).emit('signal', { from: socket.id, signal: data.signal }));
+  
+  // Watch Sync
   socket.on('sync-video', (data) => { const r = socket.roomId; if (!r || !rooms[r]) return; if (data.type === 'src') rooms[r].videoSrc = data.src; socket.broadcast.to(r).emit('sync-video', data); });
   socket.on('request-sync', () => { if (socket.roomId && rooms[socket.roomId]) socket.to(rooms[socket.roomId].host).emit('get-state', { requester: socket.id }); });
   socket.on('send-state', (data) => { io.to(data.to).emit('sync-video', { type: 'seek', time: data.time }); if(data.playing) io.to(data.to).emit('sync-video', { type: 'play' }); });
   socket.on('chat-message', (data) => { if(socket.roomId) io.to(socket.roomId).emit('chat-message', data); });
 
   // ================== GAME ZONE LOGIC ==================
-
   socket.on('create-game-room', (data) => {
     const roomId = data.roomId || generateRoomId();
     if (gameRooms[roomId]) return socket.emit('game-error', 'Room ID collision.');
     gameRooms[roomId] = {
       players: [{ id: socket.id, name: data.name, symbol: 'X' }],
-      board: Array(9).fill(null),
-      turn: 'X',
-      gameState: 'waiting',
-      gameType: data.gameType,
-      reflexState: null,
-      scores: { X: 0, O: 0 } // Initialize Scores
+      board: Array(9).fill(null), turn: 'X', gameState: 'waiting', gameType: data.gameType, reflexState: null,
+      scores: { X: 0, O: 0 }
     };
     socket.join(roomId); socket.gameRoomId = roomId;
     socket.emit('game-room-created', { roomId, gameType: data.gameType });
@@ -137,11 +133,9 @@ io.on('connection', (socket) => {
     socket.join(data.roomId); socket.gameRoomId = data.roomId;
     socket.emit('game-room-joined', { roomId: data.roomId, gameType: room.gameType });
     room.gameState = 'playing';
-    // Send scores on join
     io.to(data.roomId).emit('game-start', { players: room.players, turn: room.turn, board: room.board, gameType: room.gameType, scores: room.scores });
   });
 
-  // Tic Tac Toe
   socket.on('ttt-move', (data) => {
     const room = gameRooms[socket.gameRoomId];
     if (!room || room.gameState !== 'playing') return;
@@ -152,8 +146,7 @@ io.on('connection', (socket) => {
       const winnerLine = checkTTTWinner(room.board);
       if (winnerLine) {
         room.gameState = 'finished';
-        const winnerSymbol = room.board[winnerLine[0]];
-        room.scores[winnerSymbol]++; // Increment Score
+        room.scores[room.board[winnerLine[0]]]++;
         io.to(socket.gameRoomId).emit('ttt-update', { board: room.board, winner: player.id, line: winnerLine, scores: room.scores });
       } else if (room.board.every(cell => cell !== null)) {
         room.gameState = 'finished';
@@ -165,21 +158,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Restart Game
   socket.on('restart-game', (data) => {
     const room = gameRooms[socket.gameRoomId];
     if (!room) return;
-    // Reset Board & Turn, keep scores
-    room.board = Array(9).fill(null);
-    room.turn = 'X';
-    room.gameState = 'playing';
-    io.to(socket.gameRoomId).emit('game-start', { 
-        players: room.players, 
-        turn: room.turn, 
-        board: room.board, 
-        gameType: room.gameType, 
-        scores: room.scores 
-    });
+    room.board = Array(9).fill(null); room.turn = 'X'; room.gameState = 'playing';
+    io.to(socket.gameRoomId).emit('game-start', { players: room.players, turn: room.turn, board: room.board, gameType: room.gameType, scores: room.scores });
   });
 
   // Reflex
@@ -190,10 +173,7 @@ io.on('connection', (socket) => {
     const delay = (Math.random() * 3000) + 2000;
     room.reflexState = { canTap: false, winner: null };
     setTimeout(() => {
-      if (room.reflexState && !room.reflexState.winner) {
-        room.reflexState.canTap = true;
-        io.to(socket.gameRoomId).emit('reflex-state', { status: 'go' });
-      }
+      if (room.reflexState && !room.reflexState.winner) { room.reflexState.canTap = true; io.to(socket.gameRoomId).emit('reflex-state', { status: 'go' }); }
     }, delay);
   });
 
@@ -205,32 +185,38 @@ io.on('connection', (socket) => {
     if (!room.reflexState.canTap) {
       room.reflexState.winner = 'early';
       const opponent = room.players.find(p => p.id !== socket.id);
-      // Increment Opponent Score on early tap
       room.scores[opponent.symbol]++;
       io.to(socket.gameRoomId).emit('reflex-result', { loser: socket.id, winner: opponent.id, scores: room.scores });
-      room.reflexState = null;
-      return;
+      room.reflexState = null; return;
     }
     if (!room.reflexState.winner) {
       room.reflexState.winner = socket.id;
-      // Increment Winner Score
       room.scores[player.symbol]++;
       io.to(socket.gameRoomId).emit('reflex-result', { winner: socket.id, scores: room.scores });
       room.reflexState = null;
     }
   });
 
-  // Disconnect
+  // ================== COMMON CALL SYSTEM (WebRTC Signaling) ==================
+  // Works for BOTH Watch and Game rooms. Simply relays SDP/ICE to target socket.
+  socket.on('signal', (data) => {
+    // data.to = target socket ID, data.signal = SDP or ICE candidate
+    io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
+  });
+
+  // ================== DISCONNECT ==================
   socket.on('disconnect', () => {
+    // Watch Cleanup
     if (socket.roomId && rooms[socket.roomId]) {
       socket.to(socket.roomId).emit('user-disconnected', { id: socket.id });
       const clients = io.sockets.adapter.rooms.get(socket.roomId);
       if (!clients || clients.size === 0) {
         rooms[socket.roomId].timeout = setTimeout(() => {
-           if (!io.sockets.adapter.rooms.get(socket.roomId) && rooms[socket.roomId]) { delete rooms[socket.roomId]; console.log(`Room ${socket.roomId} deleted`); }
+           if (!io.sockets.adapter.rooms.get(socket.roomId) && rooms[socket.roomId]) { delete rooms[socket.roomId]; }
         }, 1000 * 60 * 2);
       }
     }
+    // Game Cleanup
     if (socket.gameRoomId && gameRooms[socket.gameRoomId]) {
       io.to(socket.gameRoomId).emit('game-error', 'Opponent disconnected');
       delete gameRooms[socket.gameRoomId];
