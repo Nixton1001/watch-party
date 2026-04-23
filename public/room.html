@@ -12,9 +12,10 @@
     body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow: hidden; }
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 3px; }
+    
     .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
     .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; }
-    .outline-btn { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: white; }
+    .outline-btn { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: white; transition: all 0.2s; }
     .outline-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(0, 243, 255, 0.1); }
     .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; }
     
@@ -22,6 +23,8 @@
     video { background: black; }
     .video-controls { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 60px 20px 20px; opacity: 0; transition: opacity 0.3s; }
     .video-wrapper:hover .video-controls { opacity: 1; }
+    .progress-container { width: 100%; height: 5px; background: rgba(255,255,255,0.2); border-radius: 5px; cursor: pointer; margin-bottom: 15px; }
+    .progress-bar { height: 100%; background: linear-gradient(90deg, var(--primary), var(--secondary)); border-radius: 5px; width: 0%; }
 
     /* Game CSS */
     .ttt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 280px; height: 280px; }
@@ -29,62 +32,70 @@
     .ttt-cell.x { color: var(--primary); }
     .ttt-cell.o { color: var(--secondary); }
 
-    /* Layout */
-    #main-content { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.3s; }
-    #sidebar { width: 320px; display: flex; flex-direction: column; border-left: 1px solid rgba(255,255,255,0.1); }
-    #sidebar.hidden { display: none; }
+    /* Layout Fixes */
+    #main-container { display: flex; height: 100vh; width: 100vw; }
+    #content-area { flex: 1; display: flex; flex-direction: column; position: relative; background: black; overflow: hidden; }
     
-    /* Chat */
+    /* Sidebar Fix for Overflow */
+    #sidebar { width: 320px; display: flex; flex-direction: column; border-left: 1px solid rgba(255,255,255,0.1); height: 100vh; flex-shrink: 0; }
+    #sidebar.hidden { display: none; }
+    #chatBox { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; } /* Critical Fix */
     .chat-msg { margin-bottom: 8px; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border-left: 2px solid var(--primary); }
-
+    
+    /* Mobile */
     @media (max-width: 768px) {
       #sidebar { position: fixed; right: 0; top: 0; bottom: 0; width: 85%; max-width: 320px; z-index: 70; transform: translateX(100%); display: flex; }
       #sidebar.open { transform: translateX(0); }
+      .video-wrapper { height: 100%; }
     }
   </style>
 </head>
-<body class="h-screen w-screen flex flex-col">
+<body>
 
-  <!-- Main Container -->
-  <div class="flex-1 flex relative">
-    
-    <!-- LEFT: Dynamic Content Area -->
-    <div id="main-content" class="bg-black relative video-wrapper">
+  <div id="main-container">
+    <!-- LEFT: Content Area -->
+    <div id="content-area">
       
-      <!-- OVERLAY NAV (Host Controls) -->
-      <div id="hostControls" class="absolute top-4 left-4 z-50 flex gap-2 hidden">
-        <button onclick="setMode('lobby')" class="outline-btn px-4 py-2 rounded-lg text-xs">Lobby</button>
-        <button onclick="setMode('watch')" class="outline-btn px-4 py-2 rounded-lg text-xs">Watch</button>
-        <button onclick="setMode('game')" class="outline-btn px-4 py-2 rounded-lg text-xs">Game (TTT)</button>
+      <!-- Host Control Bar -->
+      <div id="hostBar" class="absolute top-0 left-0 right-0 z-50 flex justify-center gap-2 p-2 bg-black/50 hidden">
+        <button onclick="setMode('lobby')" class="outline-btn px-4 py-1 rounded text-xs">Lobby</button>
+        <button onclick="setMode('watch')" class="outline-btn px-4 py-1 rounded text-xs">Watch</button>
+        <button onclick="setMode('game')" class="outline-btn px-4 py-1 rounded text-xs">Game (TTT)</button>
       </div>
 
-      <!-- CONTENT: LOBBY -->
-      <div id="view-lobby" class="flex flex-col items-center justify-center text-center p-6">
+      <!-- VIEW: LOBBY -->
+      <div id="view-lobby" class="flex-1 flex flex-col items-center justify-center text-center p-6">
         <div class="text-6xl mb-4">🚀</div>
-        <h1 class="text-4xl font-bold mb-2" style="font-family: 'Orbitron'">Lobby</h1>
+        <h1 class="text-4xl font-bold mb-2" style="font-family: 'Orbitron'">The Lobby</h1>
         <p class="text-gray-400 mb-6">Waiting for Host to start...</p>
-        <div class="room-code-big text-3xl tracking-widest text-[var(--primary)]" id="roomCodeDisplay">------</div>
+        <div class="text-xs text-gray-600">Room Code</div>
+        <div id="roomCodeDisplay" class="text-3xl tracking-widest text-[var(--primary)] font-bold">------</div>
       </div>
 
-      <!-- CONTENT: WATCH -->
-      <div id="view-watch" class="hidden w-full h-full">
+      <!-- VIEW: WATCH -->
+      <div id="view-watch" class="hidden flex-1 relative video-wrapper">
         <video id="mainVideo" class="w-full h-full" playsinline></video>
+        <div id="mobilePlayOverlay" class="absolute inset-0 flex items-center justify-center bg-black/50 hidden"><button class="neon-btn px-6 py-3 rounded-lg">Tap to Play</button></div>
+        
         <div class="video-controls flex flex-col justify-end">
+          <div id="progressContainer" class="progress-container" onclick="seekVideo(event)"><div id="progressBar" class="progress-bar"></div></div>
           <div class="flex items-center justify-between">
-             <div class="flex items-center gap-2">
-               <button onclick="togglePlayPause()" class="outline-btn p-2 rounded-lg text-sm">Play/Pause</button>
-               <button onclick="document.getElementById('fileInput').click()" class="outline-btn p-2 rounded-lg text-sm">Upload</button>
-               <input type="file" id="fileInput" class="hidden" accept="video/*" onchange="uploadVideo(this)">
-             </div>
-             <span class="text-xs text-gray-400">Host controls playback</span>
+            <div class="flex items-center gap-2">
+              <button onclick="togglePlayPause()" class="outline-btn p-2 rounded-lg text-sm">▶</button>
+              <span id="timeDisplay" class="text-xs font-mono">0:00 / 0:00</span>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="document.getElementById('fileInput').click()" class="outline-btn p-2 rounded-lg text-sm">Upload</button>
+              <input type="file" id="fileInput" class="hidden" accept="video/*" onchange="uploadVideo(this)">
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- CONTENT: GAME -->
-      <div id="view-game" class="hidden w-full h-full flex flex-col items-center justify-center p-4">
-        <div class="mb-4 text-center">
-          <span id="gameTurn" class="text-sm bg-black/50 px-3 py-1 rounded">Your Turn</span>
+      <!-- VIEW: GAME -->
+      <div id="view-game" class="hidden flex-1 flex flex-col items-center justify-center p-4">
+        <div class="mb-2 text-center">
+          <span id="gameTurn" class="text-sm bg-black/50 px-3 py-1 rounded">...</span>
         </div>
         <div id="gameBoard" class="ttt-grid"></div>
         <div class="mt-6 text-center">
@@ -97,24 +108,30 @@
         <button id="restartBtn" onclick="socket.emit('restart-game')" class="hidden neon-btn px-6 py-2 rounded-lg mt-4">Play Again</button>
       </div>
 
+      <!-- Mobile Toggle Button -->
+      <button onclick="toggleSidebar()" class="absolute top-4 right-4 z-50 md:hidden outline-btn p-2 rounded-lg">💬</button>
     </div>
 
-    <!-- RIGHT: Persistent Sidebar (Chat & Voice) -->
+    <!-- RIGHT: Sidebar -->
     <div id="sidebar" class="glass">
-      <!-- Header -->
-      <div class="p-4 border-b border-white/10 flex justify-between items-center">
-        <h3 class="font-bold text-[var(--primary)]">Room Users</h3>
-        <button onclick="toggleSidebar()" class="md:hidden outline-btn p-1 rounded">✕</button>
+      <div class="p-4 border-b border-white/10 flex justify-between items-center flex-shrink-0">
+        <h3 class="font-bold text-[var(--primary)]">Users</h3>
+        <button onclick="toggleSidebar()" class="md:hidden outline-btn p-1 rounded text-xs">✕</button>
       </div>
       
       <!-- Users List (Voice Status) -->
-      <div id="userList" class="p-2 border-b border-white/10 max-h-40 overflow-y-auto"></div>
+      <div id="userList" class="p-2 border-b border-white/10 max-h-40 overflow-y-auto flex-shrink-0"></div>
 
-      <!-- Chat -->
-      <div id="chatBox" class="flex-1 overflow-y-auto p-4 space-y-2 flex flex-col"></div>
+      <!-- Chat (Flex-1 takes remaining space) -->
+      <div id="chatBox" class="flex-1 overflow-y-auto space-y-2">
+        <div class="w-full p-4 mb-4 rounded-lg bg-black/40 border border-[var(--primary)]/20 text-center flex flex-col items-center justify-center">
+            <span class="text-xs text-gray-500">ROOM CODE</span>
+            <div id="roomCodeChat" class="text-2xl font-bold text-[var(--primary)] tracking-widest cursor-pointer" onclick="copyCode()">------</div>
+        </div>
+      </div>
       
-      <!-- Input -->
-      <div class="p-4 border-t border-white/10">
+      <!-- Input (Flex-shrink-0 keeps it at bottom) -->
+      <div class="p-4 border-t border-white/10 flex-shrink-0">
         <div class="flex gap-2">
           <input type="text" id="chatInput" placeholder="Message..." class="flex-1 input-futuristic text-sm p-2 rounded-full" onkeypress="if(event.key==='Enter')sendMessage()">
           <button onclick="toggleMic()" id="micBtn" class="outline-btn p-2 rounded-full">🎤</button>
@@ -122,9 +139,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Mobile Toggle -->
-    <button onclick="toggleSidebar()" class="absolute top-4 right-4 z-50 md:hidden outline-btn p-2 rounded-lg">💬</button>
   </div>
 
   <script>
@@ -144,8 +158,10 @@
 
     function createPeerConnection(userId) {
       if (peers[userId]) return;
+      console.log("Creating Peer Connection for", userId);
       const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
       peers[userId] = pc;
+      
       if (myStream) myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
       
       pc.ontrack = (e) => {
@@ -171,15 +187,12 @@
 
     // --- INIT ---
     window.onload = async () => {
-      // 1. Check Auth
       myData.name = localStorage.getItem('watchNightName');
       myData.uid = localStorage.getItem('watchNightUid');
       if(!myData.name) window.location.href = '/';
 
-      // 2. Init Voice
       await initVoice();
 
-      // 3. Get Room ID
       const urlParams = new URLSearchParams(window.location.search);
       const roomId = urlParams.get('room');
       if(!roomId) window.location.href = '/';
@@ -192,14 +205,16 @@
       myData.isHost = data.isHost;
       currentRoom = data.roomState;
       
-      if(myData.isHost) document.getElementById('hostControls').classList.remove('hidden');
+      if(myData.isHost) document.getElementById('hostBar').classList.remove('hidden');
       document.getElementById('roomCodeDisplay').innerText = currentRoom.id;
+      document.getElementById('roomCodeChat').innerText = currentRoom.id;
       
-      // Join existing WebRTC sessions
-      currentRoom.users.forEach(u => { if(u.id !== socket.id) createPeerConnection(u.id); });
+      // Connect to everyone already here
+      currentRoom.users.forEach(u => {
+          if(u.id !== socket.id) createPeerConnection(u.id);
+      });
+      
       updateUserList(currentRoom.users);
-      
-      // Set current mode
       setLocalMode(currentRoom.mode, currentRoom);
     });
 
@@ -210,7 +225,7 @@
 
     function setMode(mode) {
       if(!myData.isHost) return;
-      socket.emit('set-mode', { mode: mode, gameType: 'tictactoe' }); // hardcoded ttt for now
+      socket.emit('set-mode', { mode: mode, gameType: 'tictactoe' });
     }
 
     function setLocalMode(mode, state) {
@@ -237,16 +252,27 @@
     // --- WATCH LOGIC ---
     const video = document.getElementById('mainVideo');
     
-    // Host Sync Emitters
     video.onplay = () => { if(myData.isHost) socket.emit('sync-video', { type: 'play', time: video.currentTime }); };
     video.onpause = () => { if(myData.isHost) socket.emit('sync-video', { type: 'pause', time: video.currentTime }); };
+    video.ontimeupdate = () => {
+        const p=(video.currentTime/video.duration)*100;
+        document.getElementById('progressBar').style.width=p+'%';
+        document.getElementById('timeDisplay').innerText=`${Math.floor(video.currentTime/60)}:${String(Math.floor(video.currentTime%60)).padStart(2,'0')} / ${Math.floor(video.duration/60)||0}:${String(Math.floor(video.duration%60)||0).padStart(2,'0')}`;
+    };
 
     socket.on('sync-video', (data) => {
-      if(myData.isHost) return;
-      if(data.type === 'src') { video.src = data.src; video.play(); }
+      if(myData.isHost && data.type !== 'src') return; // Host ignores playback sync, but needs src sync for late joiners logic if implemented
+      if(data.type === 'src') { video.src = data.src; video.play().catch(e=>{}); }
       if(data.type === 'play') { video.currentTime = data.time; video.play(); }
       if(data.type === 'pause') { video.currentTime = data.time; video.pause(); }
     });
+
+    function seekVideo(e) {
+        const rect = document.getElementById('progressContainer').getBoundingClientRect();
+        const pos = (e.clientX - rect.left) / rect.width;
+        video.currentTime = pos * video.duration;
+        if(myData.isHost) socket.emit('sync-video', { type: 'seek', time: video.currentTime });
+    }
 
     async function uploadVideo(input) {
       if(!input.files[0]) return;
@@ -259,6 +285,8 @@
       socket.emit('sync-video', { type: 'src', src: d.filePath });
     }
 
+    function togglePlayPause() { if(video.paused) video.play(); else video.pause(); }
+
     // --- GAME LOGIC ---
     function renderGame(state) {
       document.getElementById('scoreX').innerText = state.scores.X;
@@ -267,9 +295,8 @@
       const board = document.getElementById('gameBoard');
       board.innerHTML = '';
       const myTurn = state.turn === myData.symbol;
-      
-      // Determine if game over
       const isGameOver = (state.line || state.draw);
+      
       document.getElementById('restartBtn').classList.toggle('hidden', !isGameOver || !myData.isHost);
       document.getElementById('gameTurn').innerText = isGameOver ? "Game Over" : (myTurn ? "Your Turn" : "Opponent Turn");
 
@@ -303,6 +330,7 @@
       });
     }
 
+    // FIX: User Joined needs to trigger connection
     socket.on('user-joined', (user) => {
       createPeerConnection(user.id);
       currentRoom.users.push(user);
@@ -312,6 +340,7 @@
 
     socket.on('user-disconnected', (id) => {
       if(peers[id]) { peers[id].close(); delete peers[id]; }
+      const a=document.getElementById(`audio-${id}`); if(a)a.remove();
       currentRoom.users = currentRoom.users.filter(u => u.id !== id);
       updateUserList(currentRoom.users);
     });
@@ -332,7 +361,8 @@
       d.className = 'chat-msg text-sm';
       d.innerHTML = `<b style="color:${c}">${n}:</b> ${m}`;
       document.getElementById('chatBox').appendChild(d);
-      document.getElementById('chatBox').scrollTop = 10000;
+      // Auto scroll
+      document.getElementById('chatBox').scrollTop = document.getElementById('chatBox').scrollHeight;
     }
 
     function toggleMic() {
@@ -342,7 +372,7 @@
     }
     function updateMicUI() { document.getElementById('micBtn').innerText = isMicOn ? '🎤' : '🔇'; document.getElementById('micBtn').classList.toggle('neon-btn', isMicOn); }
     function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
-    function togglePlayPause() { if(video.paused) video.play(); else video.pause(); }
+    function copyCode() { navigator.clipboard.writeText(currentRoom.id); alert("Code Copied!"); }
   </script>
 </body>
 </html>
