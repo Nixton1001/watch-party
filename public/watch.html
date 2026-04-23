@@ -63,7 +63,6 @@
     .room-code-big { font-family: 'Orbitron', sans-serif; font-size: 2rem; font-weight: 900; letter-spacing: 6px; color: var(--primary); text-shadow: 0 0 10px var(--primary); cursor: pointer; transition: all 0.3s; }
     .room-code-big:hover { color: white; text-shadow: 0 0 20px white; }
 
-    /* Progress Bar Styles */
     .progress-container { width: 100%; height: 5px; background: rgba(255,255,255,0.2); border-radius: 5px; cursor: pointer; position: relative; margin-bottom: 15px; transition: height 0.2s; }
     .progress-container:hover { height: 8px; }
     .progress-bar { height: 100%; background: linear-gradient(90deg, var(--primary), var(--secondary)); border-radius: 5px; width: 0%; position: relative; }
@@ -122,8 +121,6 @@
       <div id="mobilePlayOverlay" onclick="forcePlay()"><button class="px-6 py-3 neon-btn rounded-lg font-bold">Tap to Play Video</button></div>
       
       <div class="video-controls flex flex-col justify-end">
-        
-        <!-- Progress Bar (Seek Bar) -->
         <div id="progressContainer" class="progress-container">
           <div id="progressBar" class="progress-bar">
             <div class="progress-handle"></div>
@@ -217,7 +214,6 @@
     localStorage.setItem('watchNightUid', myUid);
 
     const peers = {}; 
-    const users = {};
 
     window.onload = async () => {
       const savedSession = localStorage.getItem('watchNightSession');
@@ -278,11 +274,18 @@
 
     async function getMedia() {
       try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            console.warn("Audio not supported");
+            return;
+        }
         myStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
         isMicOn = true;
         updateMicUI();
-      } catch (e) { console.error("Microphone access denied.", e); myStream = null; }
+      } catch (e) { 
+        console.error("Microphone access denied or error.", e); 
+        alert("Microphone access denied. Voice chat will not work.");
+        myStream = null; 
+      }
     }
     
     // --- SOCKET EVENTS ---
@@ -311,7 +314,10 @@
     });
 
     socket.on('chat-message', (data) => addChatMessage(data.name, data.msg, '#00f3ff'));
-    socket.on('user-joined', (data) => { addChatMessage('System', `${data.name} joined`, '#888'); createPeerConnection(data.id, true); });
+    socket.on('user-joined', (data) => { 
+      addChatMessage('System', `${data.name} joined`, '#888'); 
+      createPeerConnection(data.id, true); 
+    });
     socket.on('user-disconnected', (data) => {
       addChatMessage('System', `${data.name} left`, '#888');
       if(peers[data.id]) { peers[data.id].close(); delete peers[data.id]; }
@@ -337,21 +343,42 @@
       } catch (err) { console.error('Signal Error:', err); }
     });
 
+    // --- FIX: Create Peer Connection with correct order ---
     function createPeerConnection(userId, isOfferer) {
       if (peers[userId]) return;
+      
       const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
       peers[userId] = pc;
-      if (myStream) myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
+
+      // 1. Setup Listeners FIRST
+      pc.onicecandidate = (event) => { 
+        if (event.candidate) socket.emit('signal', { to: userId, signal: event.candidate }); 
+      };
+
       pc.ontrack = (event) => {
         let remoteAudio = document.getElementById(`audio-${userId}`);
-        if (!remoteAudio) { remoteAudio = document.createElement('audio'); remoteAudio.id = `audio-${userId}`; remoteAudio.autoplay = true; document.body.appendChild(remoteAudio); }
+        if (!remoteAudio) { 
+            remoteAudio = document.createElement('audio'); 
+            remoteAudio.id = `audio-${userId}`; 
+            remoteAudio.autoplay = true; 
+            document.body.appendChild(remoteAudio); 
+        }
         if (remoteAudio.srcObject !== event.streams[0]) remoteAudio.srcObject = event.streams[0];
       };
-      pc.onicecandidate = (event) => { if (event.candidate) socket.emit('signal', { to: userId, signal: event.candidate }); };
+
       if (isOfferer) {
         pc.onnegotiationneeded = async () => {
-          try { const offer = await pc.createOffer(); await pc.setLocalDescription(offer); socket.emit('signal', { to: userId, signal: offer }); } catch (err) { console.error(err); }
+          try { 
+            const offer = await pc.createOffer(); 
+            await pc.setLocalDescription(offer); 
+            socket.emit('signal', { to: userId, signal: offer }); 
+          } catch (err) { console.error(err); }
         };
+      }
+
+      // 2. Add Tracks AFTER listeners are ready
+      if (myStream) {
+        myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
       }
     }
 
@@ -379,24 +406,18 @@
     function forcePlay() { video.play(); document.getElementById('mobilePlayOverlay').style.display = 'none'; }
     function togglePlayPause() { if(video.paused) video.play(); else video.pause(); }
     
-    // Update Progress Bar visually
     video.addEventListener('timeupdate', () => {
       const percent = (video.currentTime / video.duration) * 100;
       progressBar.style.width = percent + '%';
-      // Update time display
       const ct = Math.floor(video.currentTime);
       const d = Math.floor(video.duration) || 0;
       document.getElementById('timeDisplay').innerText = `${formatTime(ct)} / ${formatTime(d)}`;
     });
 
-    // Host Seeking Logic
     video.addEventListener('seeked', () => {
-      if(isHost) {
-        socket.emit('sync-video', { type: 'seek', time: video.currentTime });
-      }
+      if(isHost) socket.emit('sync-video', { type: 'seek', time: video.currentTime });
     });
 
-    // Click on Progress Bar to Seek
     progressContainer.addEventListener('click', (e) => {
       const rect = progressContainer.getBoundingClientRect();
       const pos = (e.clientX - rect.left) / rect.width;
