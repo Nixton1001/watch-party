@@ -22,7 +22,7 @@
     @keyframes bgPan { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
     
     /* Splash logic */
-    #splash-screen { position: fixed; inset: 0; z-index: 9998; background: radial-gradient(circle at center, #0a0a12 0%, #000000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 1s ease, visibility 1s ease; }
+    #splash-screen { position: fixed; inset: 0; z-index: 9998; background: radial-gradient(circle at center, #0a0a12 0%, #000000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 1s ease, visibility 1s ease; overflow: hidden; }
     #splash-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
     
     .splash-bg-effect { position: absolute; width: 150%; height: 150%; background: radial-gradient(circle, transparent 0%, #000 80%), linear-gradient(0deg, transparent 24%, var(--primary) 25%, var(--primary) 26%, transparent 27%, transparent 74%, var(--primary) 75%, var(--primary) 76%, transparent 77%, transparent), linear-gradient(90deg, transparent 24%, var(--primary) 25%, var(--primary) 26%, transparent 27%, transparent 74%, var(--primary) 75%, var(--primary) 76%, transparent 77%, transparent); background-size: 100% 100%, 50px 50px, 50px 50px; opacity: 0.05; z-index: 0; animation: bgPan 10s linear infinite; }
@@ -49,9 +49,14 @@
   <div id="splash-screen">
     <div class="splash-bg-effect"></div>
     <div class="text-lg tracking-widest text-gray-400 uppercase anim-fade-in" style="animation-delay: 0.2s">Welcome to</div>
-    <div class="text-8xl md:text-9xl font-black text-white my-4 anim-fade-in" style="font-family: 'Orbitron'; animation-delay: 0.4s">WATCH<br><span class="text-[var(--primary)]">NIGHT</span></div>
-    <div class="text-2xl md:text-3xl font-bold text-gray-300 mt-8 anim-fade-in" style="animation-delay: 0.6s">
-      Made with <span class="text-red-500 text-3xl">❤</span> by <span class="text-[var(--primary)]">Nikhil (Nixton)</span>
+    
+    <!-- FIXED: Responsive text sizing to prevent overflow on mobile -->
+    <div class="text-5xl sm:text-6xl md:text-8xl font-black text-white my-4 text-center leading-tight anim-fade-in" style="font-family: 'Orbitron'; animation-delay: 0.4s">
+      WATCH<br><span class="text-[var(--primary)]">NIGHT</span>
+    </div>
+    
+    <div class="text-xl sm:text-2xl md:text-3xl font-bold text-gray-300 mt-8 anim-fade-in text-center px-4" style="animation-delay: 0.6s">
+      Made with <span class="text-red-500 text-2xl sm:text-3xl">❤</span> by <span class="text-[var(--primary)]">Nikhil (Nixton)</span>
     </div>
   </div>
 
@@ -146,21 +151,18 @@
 
     // --- 1. FLOW CONTROL ---
     window.onload = () => {
-      // 1. Check if returning user has name
       const savedName = localStorage.getItem('watchNightName');
       if(savedName) document.getElementById('gateNameInput').value = savedName;
 
-      // 2. Let Splash Animation Run (Wait 3.5 seconds)
+      // Splash Animation Time -> Then Show Gate
       setTimeout(() => {
-        // 3. Hide Splash
         document.getElementById('splash-screen').classList.add('hidden');
         
-        // 4. Show Name Gate (After Splash fades)
         setTimeout(() => {
           document.getElementById('nameGate').classList.add('show');
-        }, 1000); // Wait for splash opacity transition
+        }, 1000);
         
-      }, 3500); // Duration of splash display
+      }, 3500);
     };
 
     function enterHub() {
@@ -172,16 +174,14 @@
       localStorage.setItem('watchNightName', myData.name);
       localStorage.setItem('watchNightUid', myData.uid);
 
-      // Hide Gate
       document.getElementById('nameGate').classList.remove('show');
 
-      // Show Hub
       setTimeout(() => {
         document.getElementById('mainHub').style.opacity = '1';
         document.getElementById('headerName').innerText = myData.name;
         document.getElementById('headerAvatar').innerText = myData.name.charAt(0).toUpperCase();
         
-        initGlobalVoice(); // Auto-connect Voice
+        initGlobalVoice();
       }, 300);
     }
 
