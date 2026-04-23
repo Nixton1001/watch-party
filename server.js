@@ -207,3 +207,152 @@ function generateRoomId() { return Math.random().toString(36).substring(2, 8).to
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// Add this to the top area with other variables
+const gameRooms = {}; 
+
+// ... (Keep existing code for watch party, multer, etc.) ...
+
+// --- GAME SOCKET LOGIC (Add inside io.on('connection', ...)) ---
+
+  // 1. Create Game Room
+  socket.on('create-game-room', (data) => {
+    const roomId = generateRoomId();
+    gameRooms[roomId] = {
+      players: [{ id: socket.id, name: data.name, symbol: 'X' }],
+      board: Array(9).fill(null),
+      turn: 'X',
+      gameState: 'waiting', // waiting, playing, finished
+      gameType: null,
+      reflexState: null
+    };
+    socket.join(roomId);
+    socket.gameRoomId = roomId;
+    socket.emit('game-room-created', { roomId, name: data.name, symbol: 'X' });
+  });
+
+  // 2. Join Game Room
+  socket.on('join-game-room', (data) => {
+    const room = gameRooms[data.roomId];
+    if (!room) return socket.emit('game-error', 'Room not found');
+    if (room.players.length >= 2) return socket.emit('game-error', 'Room is full');
+
+    room.players.push({ id: socket.id, name: data.name, symbol: 'O' });
+    socket.join(data.roomId);
+    socket.gameRoomId = data.roomId;
+
+    // Notify both players
+    socket.emit('game-room-joined', { roomId: data.roomId, name: data.name, symbol: 'O' });
+    
+    // Start the game logic
+    room.gameState = 'playing';
+    io.to(data.roomId).emit('game-start', { 
+      players: room.players, 
+      turn: room.turn,
+      board: room.board 
+    });
+  });
+
+  // 3. Tic Tac Toe Move
+  socket.on('ttt-move', (data) => {
+    const room = gameRooms[socket.gameRoomId];
+    if (!room) return;
+
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    // Check if it's this player's turn
+    if (room.turn !== player.symbol) return;
+
+    // Update board
+    if (room.board[data.index] === null) {
+      room.board[data.index] = player.symbol;
+      
+      // Check Win
+      const winner = checkTTTWinner(room.board);
+      if (winner) {
+        room.gameState = 'finished';
+        io.to(socket.gameRoomId).emit('ttt-update', { board: room.board, winner: player.id, line: winner });
+      } else if (room.board.every(cell => cell !== null)) {
+        // Draw
+        room.gameState = 'finished';
+        io.to(socket.gameRoomId).emit('ttt-update', { board: room.board, winner: 'draw' });
+      } else {
+        // Switch Turn
+        room.turn = room.turn === 'X' ? 'O' : 'X';
+        io.to(socket.gameRoomId).emit('ttt-update', { board: room.board, turn: room.turn });
+      }
+    }
+  });
+
+  // 4. Reflex Duel Logic
+  socket.on('start-reflex-round', () => {
+    const room = gameRooms[socket.gameRoomId];
+    if (!room || room.players.length < 2) return;
+
+    io.to(socket.gameRoomId).emit('reflex-state', { status: 'waiting' });
+    
+    // Random delay 2-5 seconds
+    const delay = (Math.random() * 3000) + 2000;
+    room.reflexState = { canTap: false, winner: null };
+
+    setTimeout(() => {
+      if (room.reflexState && !room.reflexState.winner) {
+        room.reflexState.canTap = true;
+        io.to(socket.gameRoomId).emit('reflex-state', { status: 'go' });
+      }
+    }, delay);
+  });
+
+  socket.on('reflex-tap', () => {
+    const room = gameRooms[socket.gameRoomId];
+    if (!room || !room.reflexState) return;
+
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    // Cheated (tapped before GO)
+    if (!room.reflexState.canTap) {
+      room.reflexState.winner = 'opponent'; // Auto-win for the other person
+      const opponent = room.players.find(p => p.id !== socket.id);
+      io.to(socket.gameRoomId).emit('reflex-result', { winner: opponent.id, reason: 'early' });
+      room.reflexState = null;
+      return;
+    }
+
+    // Legit win
+    if (!room.reflexState.winner) {
+      room.reflexState.winner = socket.id;
+      io.to(socket.gameRoomId).emit('reflex-result', { winner: socket.id, reason: 'valid' });
+      room.reflexState = null;
+    }
+  });
+
+  // 5. Disconnect
+  socket.on('disconnect', () => {
+    // ... existing watch party disconnect logic ...
+
+    // Game disconnect logic
+    if (socket.gameRoomId && gameRooms[socket.gameRoomId]) {
+      io.to(socket.gameRoomId).emit('game-error', 'Opponent disconnected');
+      delete gameRooms[socket.gameRoomId];
+    }
+  });
+
+// ... existing helper functions ...
+
+// Add this helper function near generateRoomId
+function checkTTTWinner(board) {
+  const lines = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6]
+  ];
+  for (let line of lines) {
+    const [a, b, c] = line;
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+      return line; // Return winning line indices
+    }
+  }
+  return null;
+}
