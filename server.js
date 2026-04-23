@@ -9,10 +9,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Ensure uploads directory exists
+// --- STORAGE & MIDDLEWARE ---
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
-// Configure Multer for video uploads
 const storage = multer.diskStorage({
   destination: './uploads/',
   filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
@@ -21,48 +20,51 @@ const upload = multer({ storage: storage });
 
 // Serve static files from 'public' folder
 app.use(express.static('public'));
-// Serve uploaded videos
 app.use('/uploads', express.static('uploads'));
 
-// Handle video file upload
+// --- ROUTES ---
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
+
+// Explicit route for watch page
+app.get('/watch.html', (req, res) => {
+  res.sendFile(__dirname + '/public/watch.html');
+});
+
+// Video Upload Endpoint
 app.post('/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
   res.json({ filePath: `/uploads/${req.file.filename}` });
 });
 
-// In-memory room storage
-const rooms = {};
+// --- SOCKET LOGIC ---
+const rooms = {}; // In-Memory Storage
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
+  // 1. Create Room
   socket.on('create-room', (data) => {
     const roomId = generateRoomId();
     rooms[roomId] = {
       host: socket.id,
       videoSrc: '',
-      welcomeMsg: 'Welcome to the Party!',
+      welcomeMsg: 'Welcome!',
       users: [{ id: socket.id, name: data.name }]
     };
     socket.join(roomId);
     socket.roomId = roomId;
+    console.log(`Room created: ${roomId}`);
     socket.emit('room-created', { roomId });
   });
 
-  socket.on('set-welcome', (data) => {
-    if (socket.roomId && rooms[socket.roomId] && rooms[socket.roomId].host === socket.id) {
-      rooms[socket.roomId].welcomeMsg = data.msg;
-    }
-  });
-
+  // 2. Join Room
   socket.on('join-room', (data) => {
     const room = rooms[data.roomId];
-    if (!room) return socket.emit('error', 'Room not found');
+    if (!room) return socket.emit('error', 'Room not found or expired');
     
     socket.roomId = data.roomId;
-    
-    // Notify host and others
-    socket.to(room.host).emit('user-joined', { id: socket.id, name: data.name });
     socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
     
     room.users.push({ id: socket.id, name: data.name });
@@ -71,15 +73,16 @@ io.on('connection', (socket) => {
     socket.emit('room-joined', { 
       roomId: data.roomId, 
       videoSrc: room.videoSrc,
-      welcomeMsg: room.welcomeMsg,
-      users: room.users 
+      welcomeMsg: room.welcomeMsg
     });
   });
 
+  // 3. WebRTC Signaling
   socket.on('signal', (data) => {
     io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
   });
 
+  // 4. Video Source Change
   socket.on('change-src', (data) => {
     if (socket.roomId && rooms[socket.roomId]) {
       rooms[socket.roomId].videoSrc = data.src;
@@ -87,6 +90,7 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 5. Video Sync
   socket.on('sync-video', (data) => {
     if(socket.roomId) socket.broadcast.to(socket.roomId).emit('sync-video', data);
   });
@@ -102,14 +106,12 @@ io.on('connection', (socket) => {
     if(data.playing) io.to(data.to).emit('sync-video', { type: 'play' });
   });
 
+  // 6. Chat
   socket.on('chat-message', (data) => {
     if(socket.roomId) io.to(socket.roomId).emit('chat-message', data);
   });
 
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-    // Optional: Clean up rooms if host leaves
-  });
+  socket.on('disconnect', () => console.log('User disconnected:', socket.id));
 });
 
 function generateRoomId() { 
