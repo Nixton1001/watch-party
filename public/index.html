@@ -32,7 +32,6 @@
     .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--primary); transform: translateY(-2px); }
     .outline-btn { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: white; transition: all 0.3s; }
     .outline-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(0, 243, 255, 0.05); }
-    .outline-btn.active { border-color: var(--primary); background: rgba(0, 243, 255, 0.1); color: var(--primary); }
     .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; transition: all 0.3s; }
     .input-futuristic:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 15px rgba(0, 243, 255, 0.2); }
     .anim-fade-in { animation: fadeInUp 0.6s ease forwards; opacity: 0; }
@@ -45,12 +44,12 @@
 </head>
 <body>
 
-  <!-- 1. SPLASH SCREEN (Visible First) -->
+  <!-- 1. SPLASH SCREEN -->
   <div id="splash-screen">
     <div class="splash-bg-effect"></div>
     <div class="text-lg tracking-widest text-gray-400 uppercase anim-fade-in" style="animation-delay: 0.2s">Welcome to</div>
     
-    <!-- FIXED: Responsive text sizing to prevent overflow on mobile -->
+    <!-- Responsive Text -->
     <div class="text-5xl sm:text-6xl md:text-8xl font-black text-white my-4 text-center leading-tight anim-fade-in" style="font-family: 'Orbitron'; animation-delay: 0.4s">
       WATCH<br><span class="text-[var(--primary)]">NIGHT</span>
     </div>
@@ -60,7 +59,7 @@
     </div>
   </div>
 
-  <!-- 2. NAME GATE (Pops up AFTER Splash) -->
+  <!-- 2. NAME GATE -->
   <div id="nameGate">
     <div class="gate-box">
       <h1 class="text-3xl font-bold text-white mb-2" style="font-family: 'Orbitron'">Identify Yourself</h1>
@@ -79,60 +78,32 @@
       <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-[var(--primary)] to-[var(--secondary)] flex items-center justify-center font-bold text-black text-xs" id="headerAvatar">?</div>
     </div>
 
-    <div class="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-8">
-      
-      <!-- WATCH TOGETHER -->
-      <div class="glass rounded-2xl p-6 border border-white/10 flex flex-col anim-fade-in" style="animation-delay: 0.1s">
-        <div class="flex items-center gap-4 mb-6">
-          <div class="text-5xl">🎬</div>
-          <div>
-            <h2 class="text-2xl font-bold" style="font-family: 'Orbitron'">Watch Together</h2>
-            <p class="text-gray-500 text-sm">Stream videos in sync</p>
+    <div class="w-full max-w-lg">
+      <!-- UNIFIED ROOM CARD -->
+      <div class="glass rounded-2xl p-8 border border-white/10 flex flex-col items-center text-center anim-fade-in">
+        <div class="text-6xl mb-4">🚀</div>
+        <h2 class="text-3xl font-bold mb-2" style="font-family: 'Orbitron'">Create or Join</h2>
+        <p class="text-gray-400 text-sm mb-8">Start a room to Watch, Play, and Chat together.</p>
+
+        <div class="w-full space-y-4">
+          <button onclick="createRoom()" class="w-full neon-btn py-4 rounded-xl text-xl">Create New Room</button>
+          
+          <div class="flex items-center gap-2 w-full">
+            <div class="flex-1 h-px bg-white/10"></div>
+            <span class="text-gray-500 text-xs">OR</span>
+            <div class="flex-1 h-px bg-white/10"></div>
           </div>
-        </div>
-        <div class="space-y-3">
-          <button onclick="createRoom('watch')" class="w-full neon-btn py-3 rounded-xl text-lg">Create Room</button>
+
           <div class="flex gap-2">
-            <input type="text" id="watchCode" placeholder="Enter Code" class="flex-1 input-futuristic rounded-xl p-3 uppercase text-center text-lg tracking-widest">
-            <button onclick="joinRoom('watch')" class="outline-btn px-6 rounded-xl font-bold">Join</button>
+            <input type="text" id="joinCodeInput" placeholder="Enter Code" class="flex-1 input-futuristic rounded-xl p-3 uppercase text-center text-lg tracking-widest">
+            <button onclick="joinRoom()" class="outline-btn px-6 rounded-xl font-bold text-lg">Join</button>
           </div>
         </div>
       </div>
-
-      <!-- GAME ZONE -->
-      <div class="glass rounded-2xl p-6 border border-white/10 flex flex-col anim-fade-in" style="animation-delay: 0.2s">
-        <div class="flex items-center gap-4 mb-4">
-          <div class="text-5xl">🎮</div>
-          <div>
-            <h2 class="text-2xl font-bold" style="font-family: 'Orbitron'">Game Zone</h2>
-            <p class="text-gray-500 text-sm">Play with friends</p>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-3 mb-4">
-          <button onclick="selectGame('tictactoe')" id="btn-ttt" class="outline-btn p-3 rounded-xl flex flex-col items-center active">
-            <span class="text-3xl mb-1">⭕</span>
-            <span class="text-xs font-bold uppercase tracking-wider">Tic Tac Toe</span>
-          </button>
-          <button onclick="selectGame('reflex')" id="btn-reflex" class="outline-btn p-3 rounded-xl flex flex-col items-center">
-            <span class="text-3xl mb-1">⚡</span>
-            <span class="text-xs font-bold uppercase tracking-wider">Reflex Duel</span>
-          </button>
-        </div>
-
-        <div class="space-y-3">
-          <button onclick="createRoom('game')" class="w-full neon-btn py-3 rounded-xl text-lg">Create Game</button>
-          <div class="flex gap-2">
-            <input type="text" id="gameCode" placeholder="Enter Code" class="flex-1 input-futuristic rounded-xl p-3 uppercase text-center text-lg tracking-widest">
-            <button onclick="joinRoom('game')" class="outline-btn px-6 rounded-xl font-bold">Join</button>
-          </div>
-        </div>
-      </div>
-
     </div>
   </div>
 
-  <!-- 4. GLOBAL VOICE BAR (Common Audio) -->
+  <!-- 4. GLOBAL VOICE BAR -->
   <div id="globalVoiceBar">
     <div class="flex items-center gap-2 text-gray-400">
       <span class="animate-pulse">🔵</span> Global Lobby
@@ -147,7 +118,6 @@
     let myStream;
     let isMicOn = false;
     const peers = {}; 
-    let selectedGameType = 'tictactoe';
 
     // --- 1. FLOW CONTROL ---
     window.onload = () => {
@@ -281,38 +251,24 @@
 
     // --- 5. NAVIGATION FUNCTIONS ---
     
-    function selectGame(type) {
-      selectedGameType = type;
-      document.getElementById('btn-ttt').classList.toggle('active', type === 'tictactoe');
-      document.getElementById('btn-reflex').classList.toggle('active', type === 'reflex');
-    }
-
     function generateUID() {
       return Math.random().toString(36).substring(2, 8).toUpperCase();
     }
 
-    function createRoom(type) {
+    function createRoom() {
       const roomId = generateUID();
-      redirectTo(type, roomId, 'create');
+      goToRoom(roomId);
     }
 
-    function joinRoom(type) {
-      let code = '';
-      if (type === 'watch') code = document.getElementById('watchCode').value.toUpperCase();
-      else code = document.getElementById('gameCode').value.toUpperCase();
-
+    function joinRoom() {
+      const code = document.getElementById('joinCodeInput').value.toUpperCase();
       if (!code) return alert("Please enter a code");
-      redirectTo(type, code, 'join');
+      goToRoom(code);
     }
 
-    function redirectTo(type, code, action) {
-      let url = '';
-      if (type === 'watch') {
-        url = `/watch.html?action=${action}&room=${code}&name=${encodeURIComponent(myData.name)}`;
-      } else {
-        url = `/game.html?action=${action}&room=${code}&name=${encodeURIComponent(myData.name)}&game=${selectedGameType}`;
-      }
-      window.location.href = url;
+    function goToRoom(roomId) {
+      // Navigate to the unified room page
+      window.location.href = `/room?room=${roomId}`;
     }
   </script>
 </body>
