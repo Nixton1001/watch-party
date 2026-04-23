@@ -2,29 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Watch-Night | Game Zone</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Watch-Night | Game</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/socket.io/socket.io.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
   <style>
     :root { --primary: #00f3ff; --secondary: #bc13fe; --bg: #050505; }
-    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow: hidden; }
-    
-    @keyframes fadeIn { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
+    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow: hidden; user-select: none; }
     @keyframes glowPulse { 0% { box-shadow: 0 0 20px var(--primary); } 50% { box-shadow: 0 0 40px var(--primary), 0 0 60px var(--secondary); } 100% { box-shadow: 0 0 20px var(--primary); } }
-
     .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
-    .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; border: none; }
-    
-    .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; }
-    .input-futuristic:focus { outline: none; border-color: var(--primary); }
-
-    .room-code-big { font-family: 'Orbitron', sans-serif; font-size: 2rem; font-weight: 900; letter-spacing: 6px; color: var(--primary); text-shadow: 0 0 10px var(--primary); }
+    .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; border: none; transition: 0.2s; }
+    .neon-btn:hover { filter: brightness(1.2); }
+    .room-code-big { font-family: 'Orbitron'; font-size: 3rem; font-weight: 900; letter-spacing: 8px; color: var(--primary); text-shadow: 0 0 15px var(--primary); }
     
     /* TTT */
-    .ttt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 240px; height: 240px; }
-    .ttt-cell { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron', sans-serif; font-size: 3rem; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+    .ttt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 280px; height: 280px; }
+    .ttt-cell { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron'; font-size: 4rem; cursor: pointer; transition: 0.2s; }
     .ttt-cell:hover { background: rgba(255,255,255,0.1); }
     .ttt-cell.x { color: var(--primary); text-shadow: 0 0 20px var(--primary); }
     .ttt-cell.o { color: var(--secondary); text-shadow: 0 0 20px var(--secondary); }
@@ -39,33 +33,44 @@
 <body class="h-screen w-screen flex flex-col">
 
   <!-- WAITING SCREEN -->
-  <div id="waitingScreen" class="h-full w-full flex flex-col items-center justify-center p-6">
-    <div class="text-center anim-fade-in glass p-8 rounded-2xl max-w-sm w-full">
-      <h2 class="text-2xl font-bold mb-4" style="font-family: 'Orbitron'">Waiting for Opponent</h2>
-      <div class="w-12 h-12 border-4 border-t-[var(--primary)] border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mx-auto mb-6"></div>
+  <div id="waitingScreen" class="h-full w-full hidden flex flex-col items-center justify-center p-6">
+    <div class="text-center glass p-10 rounded-2xl max-w-sm w-full">
+      <div class="text-6xl mb-4">⏳</div>
+      <h2 class="text-3xl font-bold mb-2" style="font-family: 'Orbitron'">Waiting for Opponent</h2>
       <p class="text-gray-400 text-sm mb-2">Share this code:</p>
-      <div id="roomCodeDisplay" class="room-code-big mb-4" onclick="copyCode()">------</div>
+      <div id="roomCodeDisplay" class="room-code-big mb-6" onclick="navigator.clipboard.writeText(this.innerText)">------</div>
+      <div class="w-10 h-10 border-4 border-t-[var(--primary)] border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mx-auto"></div>
     </div>
   </div>
 
   <!-- GAME ARENA -->
   <div id="gameArena" class="hidden h-full w-full flex flex-col">
     <header class="glass p-3 border-b border-white/10 flex justify-between items-center">
-      <div class="flex flex-col">
-        <span class="text-xs opacity-50">YOU</span>
+      <div class="flex flex-col items-start">
+        <span class="text-xs opacity-50">YOU (<span id="mySymbol">X</span>)</span>
         <span id="myName" class="font-bold text-[var(--primary)]">Player</span>
       </div>
-      <div id="turnIndicator" class="text-xs bg-black/50 px-2 py-1 rounded">Waiting...</div>
+      
+      <!-- SCOREBOARD -->
+      <div class="flex flex-col items-center">
+        <div class="flex items-center gap-3 text-xl font-bold font-mono">
+          <span id="scoreX" class="text-[var(--primary)]">0</span>
+          <span class="text-gray-500">:</span>
+          <span id="scoreO" class="text-[var(--secondary)]">0</span>
+        </div>
+        <div id="turnIndicator" class="text-xs bg-black/50 px-3 py-0.5 rounded mt-1">...</div>
+      </div>
+
       <div class="flex flex-col items-end">
+        <span class="text-xs opacity-50">ENEMY (<span id="oppSymbol">O</span>)</span>
         <span id="oppName" class="font-bold text-[var(--secondary)]">Opponent</span>
-        <span class="text-xs opacity-50">ENEMY</span>
       </div>
     </header>
 
     <main id="gameContent" class="flex-1 flex flex-col items-center justify-center p-4"></main>
     
     <footer class="p-4 text-center">
-      <button onclick="leaveGame()" class="text-gray-500 hover:text-red-500 text-xs uppercase tracking-widest">Leave Room</button>
+      <button onclick="window.location.href='/'" class="text-gray-500 hover:text-red-500 text-xs uppercase">Leave Room</button>
     </footer>
   </div>
 
@@ -73,8 +78,9 @@
     const socket = io();
     let myData = { name: '', symbol: '', id: '' };
     let currentRoom = null;
+    let gameScores = { X: 0, O: 0 };
 
-    // --- INIT (Reads URL from Index.html) ---
+    // --- INIT ---
     const urlParams = new URLSearchParams(window.location.search);
     const action = urlParams.get('action');
     const roomParam = urlParams.get('room');
@@ -83,121 +89,106 @@
 
     window.onload = () => {
       if (!action || !roomParam) window.location.href = '/';
-      
       myData.name = nameParam || 'Player';
       
       if (action === 'create') {
-        myData.symbol = 'X'; // Host is X
+        myData.symbol = 'X';
         currentRoom = roomParam;
         document.getElementById('waitingScreen').classList.remove('hidden');
         document.getElementById('roomCodeDisplay').innerText = roomParam;
         socket.emit('create-game-room', { name: myData.name, roomId: roomParam, gameType: gameParam || 'tictactoe' });
       } else if (action === 'join') {
-        myData.symbol = 'O'; // Joiner is O
+        myData.symbol = 'O';
         currentRoom = roomParam;
-        // Joiner waits for 'game-start' event directly
         socket.emit('join-game-room', { roomId: roomParam, name: myData.name });
       }
     };
 
     socket.on('game-error', (msg) => { alert(msg); window.location.href = '/'; });
 
-    // --- GAME START ---
+    // --- GAME START (Handles Initial Start AND Restart) ---
     socket.on('game-start', (data) => {
       document.getElementById('waitingScreen').classList.add('hidden');
       document.getElementById('gameArena').classList.remove('hidden');
       
       const me = data.players.find(p => p.symbol === myData.symbol);
-      const opponent = data.players.find(p => p.symbol !== myData.symbol);
+      const opp = data.players.find(p => p.symbol !== myData.symbol);
       
       document.getElementById('myName').innerText = me.name;
-      document.getElementById('oppName').innerText = opponent.name;
+      document.getElementById('oppName').innerText = opp.name;
+      document.getElementById('mySymbol').innerText = me.symbol;
+      document.getElementById('oppSymbol').innerText = opp.symbol;
+
+      // Update Global Scores
+      if(data.scores) gameScores = data.scores;
       
       if(data.gameType === 'tictactoe') initTTT(data);
-      if(data.gameType === 'reflex') initReflex();
+      else initReflex();
     });
-
-    function copyCode() {
-        navigator.clipboard.writeText(document.getElementById('roomCodeDisplay').innerText);
-    }
-    function leaveGame() { window.location.href = '/'; }
 
     // --- TIC TAC TOE ---
     let tttBoard = Array(9).fill(null);
     
-    function initTTT(initialData) {
-      tttBoard = initialData.board;
-      renderTTT(initialData.turn);
-    }
+    function initTTT(d){ tttBoard=d.board; renderTTT(d.turn, null); }
+    
+    function renderTTT(turn, win=null) {
+      const myTurn = turn === myData.symbol;
+      
+      // Update Turn Indicator
+      document.getElementById('turnIndicator').innerText = win ? "Game Over" : (myTurn ? "Your Turn!" : "Opponent's Turn");
+      document.getElementById('turnIndicator').className = `text-xs px-3 py-0.5 rounded mt-1 ${myTurn && !win ? 'bg-[var(--primary)] text-black' : 'bg-black/50'}`;
 
-    function renderTTT(turn, winnerInfo = null) {
-      const isMyTurn = turn === myData.symbol;
-      document.getElementById('turnIndicator').innerText = winnerInfo ? "Game Over" : (isMyTurn ? "Your Turn!" : "Opponent's Turn");
-      document.getElementById('turnIndicator').className = `text-xs px-2 py-1 rounded ${isMyTurn && !winnerInfo ? 'bg-[var(--primary)] text-black font-bold' : 'bg-black/50'}`;
+      // Update Scores UI
+      document.getElementById('scoreX').innerText = gameScores.X;
+      document.getElementById('scoreO').innerText = gameScores.O;
 
       let html = `<div class="ttt-grid">`;
-      tttBoard.forEach((cell, i) => {
-        const isWinning = winnerInfo && typeof winnerInfo !== 'string' && winnerInfo.includes(i);
-        const canClick = !cell && isMyTurn && !winnerInfo;
-        html += `<div class="ttt-cell ${cell === 'X' ? 'x' : 'o'} ${isWinning ? 'win' : ''}" onclick="${canClick ? `sendTTTMove(${i})` : ''}">${cell || ''}</div>`;
+      tttBoard.forEach((c,i) => {
+        const isWin = win && typeof win !== 'string' && win.includes(i);
+        const click = !c && myTurn && !win ? `onclick="socket.emit('ttt-move',{index:${i},roomId:currentRoom})"` : '';
+        html += `<div class="ttt-cell ${c==='X'?'x':(c==='O'?'o':'')} ${isWin?'win':''}" ${click}>${c||''}</div>`;
       });
       html += `</div>`;
       
-      if(winnerInfo) {
-        const resultText = winnerInfo === 'draw' ? 'Draw!' : (tttBoard[winnerInfo[0]] === myData.symbol ? 'You Win!' : 'You Lose!');
-        html += `<div class="mt-6 text-center"><h3 class="text-2xl font-bold ${winnerInfo === 'draw' ? 'text-gray-400' : (tttBoard[winnerInfo[0]] === myData.symbol ? 'text-green-400' : 'text-red-400')}">${resultText}</h3></div>`;
+      // Game Over UI
+      if(win) {
+        const resultText = win==='draw'?'Draw!':(tttBoard[win[0]]===myData.symbol?'You Win!':'You Lose!');
+        html += `<div class="mt-6 text-center animate-pulse">`;
+        html += `<h3 class="text-3xl font-bold ${win==='draw'?'text-gray-400':(tttBoard[win[0]]===myData.symbol?'text-green-400':'text-red-400')}">${resultText}</h3>`;
+        // Restart Button (Only Host can restart to prevent double clicks)
+        if(myData.symbol === 'X') html += `<button onclick="socket.emit('restart-game', {roomId: currentRoom})" class="neon-btn mt-4 px-6 py-2 rounded-lg">Play Again</button>`;
+        html += `</div>`;
       }
       
       document.getElementById('gameContent').innerHTML = html;
     }
+    
+    socket.on('ttt-update', (d) => { tttBoard=d.board; if(d.scores) gameScores=d.scores; renderTTT(d.turn, d.line||d.winner); });
 
-    function sendTTTMove(index) { socket.emit('ttt-move', { index, roomId: currentRoom }); }
+    // --- REFLEX ---
+    function initReflex(){ document.getElementById('turnIndicator').innerText="Reflex Duel"; renderReflex('idle'); }
+    
+    function renderReflex(state, res=null){
+      // Update Scores
+      document.getElementById('scoreX').innerText = gameScores.X;
+      document.getElementById('scoreO').innerText = gameScores.O;
 
-    socket.on('ttt-update', (data) => {
-      tttBoard = data.board;
-      renderTTT(data.turn, data.line || data.winner);
-    });
-
-    // --- REFLEX DUEL ---
-    function initReflex() {
-      document.getElementById('turnIndicator').innerText = "Reflex Duel";
-      renderReflex('idle');
-    }
-
-    function renderReflex(state, resultMsg = null) {
-      let html = ``;
-      if(resultMsg) html += `<div class="text-center mb-4 anim-fade-in"><h3 class="text-2xl font-bold ${resultMsg.type === 'win' ? 'text-green-400' : 'text-red-400'}">${resultMsg.text}</h3></div>`;
-
-      html += `
-        <div class="flex flex-col items-center justify-center anim-fade-in">
-          <div id="reflexBox" class="w-64 h-64 glass border-2 rounded-2xl flex items-center justify-center flex-col cursor-pointer reflex-box ${state === 'waiting' ? 'reflex-wait' : ''} ${state === 'go' ? 'reflex-go' : ''}">
-            <p class="text-3xl font-bold">${state === 'go' ? 'GO!' : (state === 'waiting' ? 'WAIT' : 'START')}</p>
-          </div>
-      `;
-
-      const isHost = myData.symbol === 'X';
-      if(isHost) html += `<button onclick="startReflexRound()" class="neon-btn px-8 py-3 rounded-xl text-xl mt-6" ${state === 'waiting' || state === 'go' ? 'style="display:none"' : ''}>Start Round</button>`;
+      let h = res ? `<div class="text-2xl font-bold mb-4 ${res.type==='win'?'text-green-400':'text-red-400'}">${res.text}</div>` : '';
+      h += `<div class="flex flex-col items-center"><div id="reflexBox" class="w-72 h-72 glass border-2 rounded-2xl flex items-center justify-center flex-col cursor-pointer reflex-box ${state==='waiting'?'reflex-wait':''} ${state==='go'?'reflex-go':''}"><p class="text-4xl font-bold">${state==='go'?'GO!':(state==='waiting'?'WAIT':'START')}</p></div>`;
       
-      html += `</div>`;
-      document.getElementById('gameContent').innerHTML = html;
-
-      if(state === 'waiting' || state === 'go') document.getElementById('reflexBox').onclick = () => socket.emit('reflex-tap', { roomId: currentRoom });
+      if(myData.symbol==='X') h += `<button onclick="socket.emit('start-reflex-round',{roomId:currentRoom})" class="neon-btn px-8 py-3 rounded-xl text-xl mt-6" ${state!=='idle'&&state!=='result'?'style="display:none"':''}>Start Round</button>`;
+      h += `</div>`;
+      document.getElementById('gameContent').innerHTML = h;
+      if(state==='waiting'||state==='go') document.getElementById('reflexBox').onclick=()=>socket.emit('reflex-tap',{roomId:currentRoom});
     }
 
-    function startReflexRound() { socket.emit('start-reflex-round', { roomId: currentRoom }); }
-
-    socket.on('reflex-state', (data) => { renderReflex(data.status); });
-
-    socket.on('reflex-result', (data) => {
-      let msg = { type: 'lose', text: 'You Lost!' };
-      if(data.loser) {
-        if(socket.id === data.loser) msg = { type: 'lose', text: 'Too Early! You Lose!' };
-        else msg = { type: 'win', text: 'Opponent Too Early! You Win!' };
-      } else {
-        if(socket.id === data.winner) msg = { type: 'win', text: 'You Win!' };
-        else msg = { type: 'lose', text: 'Too Slow!' };
-      }
-      renderReflex('result', msg);
+    socket.on('reflex-state', (d) => renderReflex(d.status));
+    socket.on('reflex-result', (d) => {
+      if(d.scores) gameScores = d.scores;
+      let m = {type:'lose', text:'You Lost!'};
+      if(d.loser) m = socket.id===d.loser ? {type:'lose', text:'Too Early!'} : {type:'win', text:'Opponent Too Early! You Win!'};
+      else m = socket.id===d.winner ? {type:'win', text:'You Win!'} : {type:'lose', text:'Too Slow!'};
+      renderReflex('result', m);
     });
   </script>
 </body>
