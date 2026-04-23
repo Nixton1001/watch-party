@@ -17,7 +17,6 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
 
-// LIMIT: 1GB File Size
 const upload = multer({ 
   storage: storage,
   limits: { fileSize: 1024 * 1024 * 1024 } // 1GB
@@ -26,39 +25,29 @@ const upload = multer({
 app.use(express.static('public'));
 
 // --- ROUTES ---
-
-// Main Pages
 app.get('/', (req, res) => res.sendFile(__dirname + '/public/index.html'));
 app.get('/watch.html', (req, res) => res.sendFile(__dirname + '/public/watch.html'));
 
-// Upload Route
 app.post('/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
-  // We return a path to our streaming endpoint, not the static file
   res.json({ filePath: `/stream/${req.file.filename}` });
 });
 
-// --- STREAMING ROUTE (The Fix) ---
+// --- STREAMING ROUTE ---
 app.get('/stream/:filename', (req, res) => {
   const filename = req.params.filename;
   const filePath = path.join(__dirname, 'uploads', filename);
   
-  // Check if file exists
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).send('File not found');
-  }
+  if (!fs.existsSync(filePath)) return res.status(404).send('File not found');
 
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
   const range = req.headers.range;
 
   if (range) {
-    // Parse the Range header (e.g., "bytes=32324-")
     const parts = range.replace(/bytes=/, "").split("-");
     const start = parseInt(parts[0], 10);
     const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-    // Calculate chunk size (1MB chunks for smooth streaming)
     const chunksize = (end - start) + 1;
     const file = fs.createReadStream(filePath, { start, end });
     
@@ -68,15 +57,10 @@ app.get('/stream/:filename', (req, res) => {
       'Content-Length': chunksize,
       'Content-Type': 'video/mp4',
     };
-
     res.writeHead(206, head);
     file.pipe(res);
   } else {
-    // If no Range header (some older browsers/devices), send the whole file
-    const head = {
-      'Content-Length': fileSize,
-      'Content-Type': 'video/mp4',
-    };
+    const head = { 'Content-Length': fileSize, 'Content-Type': 'video/mp4' };
     res.writeHead(200, head);
     fs.createReadStream(filePath).pipe(res);
   }
@@ -85,9 +69,7 @@ app.get('/stream/:filename', (req, res) => {
 // --- ERROR HANDLING ---
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File size exceeds 1GB limit.' });
-    }
+    if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File size exceeds 1GB limit.' });
     return res.status(400).json({ error: err.message });
   }
   next(err);
@@ -121,25 +103,35 @@ io.on('connection', (socket) => {
     
     socket.roomId = data.roomId;
 
+    // Clear deletion timeout if scheduled
     if (room.timeout) {
       clearTimeout(room.timeout);
       room.timeout = null;
-      console.log(`Deletion cancelled for room ${data.roomId}`);
     }
     
+    // Logic: Host Reconnection
     if (room.hostUid === data.uid) {
       room.host = socket.id; 
       const userIndex = room.users.findIndex(u => u.uid === data.uid);
       if (userIndex > -1) room.users[userIndex].id = socket.id;
       else room.users.push({ id: socket.id, uid: data.uid, name: data.name });
       socket.join(data.roomId);
+      
+      // FIX: Notify everyone else that Host reconnected so they can re-establish peer connections
+      socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
+      
       return socket.emit('room-created', { roomId: data.roomId });
     }
 
+    // Logic: Guest Reconnection
     const existingUser = room.users.find(u => u.uid === data.uid);
     if (existingUser) {
       existingUser.id = socket.id;
       socket.join(data.roomId);
+      
+      // FIX: Notify everyone else that this user reconnected
+      socket.to(data.roomId).emit('user-joined', { id: socket.id, name: existingUser.name });
+
       return socket.emit('room-joined', { 
         roomId: data.roomId, 
         videoSrc: room.videoSrc,
@@ -147,6 +139,7 @@ io.on('connection', (socket) => {
       });
     }
 
+    // Logic: New User Joining
     socket.to(data.roomId).emit('user-joined', { id: socket.id, name: data.name });
     room.users.push({ id: socket.id, uid: data.uid, name: data.name });
     socket.join(data.roomId);
@@ -197,7 +190,7 @@ io.on('connection', (socket) => {
             delete rooms[roomId];
             console.log(`Room ${roomId} deleted.`);
           }
-        }, 1000 * 60 * 2); // 2 Minutes
+        }, 1000 * 60 * 2); 
       }
     }
   });
