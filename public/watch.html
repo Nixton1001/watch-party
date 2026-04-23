@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Watch-Night</title>
+  <title>Watch-Night | Watch Together</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/socket.io/socket.io.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
@@ -16,14 +16,6 @@
     ::-webkit-scrollbar-thumb { background: linear-gradient(var(--primary), var(--secondary)); border-radius: 3px; }
 
     @keyframes slideUp { 0% { opacity: 0; transform: translateY(50px); } 100% { opacity: 1; transform: translateY(0); } }
-    @keyframes fadeOut { 0% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
-    @keyframes heartBeat { 0% { transform: scale(1); } 25% { transform: scale(1.1); } 40% { transform: scale(1); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
-
-    /* Splash Screen */
-    #splash-screen { position: fixed; inset: 0; z-index: 9999; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; animation: fadeOut 1s ease 3s forwards; }
-    .splash-title { font-family: 'Orbitron', sans-serif; font-size: 4rem; font-weight: 800; text-align: center; animation: slideUp 1s ease; background: linear-gradient(to right, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .splash-sub { margin-top: 1rem; font-size: 1.5rem; color: rgba(255,255,255,0.8); animation: slideUp 1.2s ease; display: flex; align-items: center; gap: 10px; }
-    .splash-heart { color: #ff4757; animation: heartBeat 1.5s ease infinite; }
 
     .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; border: none; }
     .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--primary); transform: translateY(-2px); }
@@ -31,7 +23,7 @@
     .outline-btn { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: white; transition: all 0.3s; }
     .outline-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(0, 243, 255, 0.05); }
 
-    .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; transition: all 0.3s; font-family: 'Rajdhani', sans-serif; }
+    .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; transition: all 0.3s; }
     .input-futuristic:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 10px rgba(0, 243, 255, 0.2); }
 
     .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
@@ -58,7 +50,6 @@
     .icon-btn { width: 50px; height: 50px; border-radius: 50%; background: rgba(10, 10, 10, 0.6); border: 1px solid rgba(0, 243, 255, 0.3); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; color: white; backdrop-filter: blur(5px); }
     .icon-btn:hover { border-color: var(--primary); box-shadow: 0 0 10px var(--primary); }
     .icon-btn.active { background: var(--primary); color: black; border-color: var(--primary); box-shadow: 0 0 15px var(--primary); }
-    .icon-btn.disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
     .icon-btn.danger { background: #ff4757; border-color: #ff4757; }
 
     .peer-video { position: absolute; bottom: 80px; right: 20px; width: 150px; height: 100px; background: #000; border: 1px solid var(--secondary); border-radius: 8px; overflow: hidden; z-index: 40; }
@@ -82,12 +73,6 @@
 </head>
 <body>
 
-  <!-- SPLASH SCREEN -->
-  <div id="splash-screen">
-    <div class="splash-title">Welcome to<br>Watch-Night</div>
-    <div class="splash-sub">Made with <span class="splash-heart">❤</span> by Nikhil (Nixton)</div>
-  </div>
-
   <!-- JOIN OVERLAY -->
   <div id="join-overlay">
     <div class="join-text" id="join-message-text"></div>
@@ -95,7 +80,7 @@
   </div>
 
   <!-- PAGE 1: LOBBY -->
-  <div id="entryPage" class="h-screen w-screen flex items-center justify-center" style="display: none;">
+  <div id="entryPage" class="h-screen w-screen flex items-center justify-center">
     <div class="glass p-8 rounded-2xl w-full max-w-md space-y-6 border-l-4 border-l-[var(--primary)] relative overflow-hidden">
       <div class="absolute top-0 right-0 w-20 h-20 border-t-2 border-r-2 border-[var(--primary)] opacity-50 rounded-tr-2xl"></div>
       
@@ -106,11 +91,6 @@
       <div class="space-y-4">
         <input type="text" id="usernameInput" placeholder="Identify Yourself" class="w-full input-futuristic rounded-lg p-3 text-lg">
         
-        <div id="securityWarning" class="hidden bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-xs p-3 rounded-lg">
-          <strong>Security Notice:</strong> You are not using a secure connection (HTTPS). <br>
-          Browsers block Mic/Camera on normal HTTP.
-        </div>
-
         <div class="flex gap-2">
           <button id="createBtn" onclick="handleCreate()" class="flex-1 neon-btn py-3 rounded-lg text-lg">Create Room</button>
           <button onclick="showJoinInput()" class="flex-1 outline-btn font-bold py-3 rounded-lg">Join Room</button>
@@ -153,7 +133,6 @@
     <div id="sidebar" class="glass">
       <div id="sourceControls" class="p-4 border-b border-white/10 space-y-3">
         <h3 class="text-xs text-gray-400 uppercase tracking-wider">Host Settings</h3>
-        <input type="text" id="welcomeMsgInput" placeholder="Welcome Message" class="w-full input-futuristic text-sm p-2 rounded" onchange="updateWelcomeMsg(this.value)">
         <div class="flex gap-2">
           <input type="text" id="videoLinkInput" placeholder="Video Link" class="flex-1 input-futuristic text-sm p-2 rounded">
           <button onclick="loadLink()" class="neon-btn px-3 rounded text-sm">Load</button>
@@ -221,18 +200,10 @@
     let myStream, myName, isHost = false, isMicOn = false, isCamOn = false;
     const peers = {}, users = {};
 
-    // --- 1. INIT & SECURITY CHECK ---
+    // --- 1. INIT ---
     window.onload = () => {
-      setTimeout(() => {
-        document.getElementById('entryPage').style.display = 'flex';
-        checkSecurity();
-      }, 3000);
+      document.getElementById('entryPage').style.display = 'flex';
     };
-
-    function checkSecurity() {
-      const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-      if (!isSecure) document.getElementById('securityWarning').classList.remove('hidden');
-    }
 
     function addChatMessage(name, msg, color = 'white') {
       const div = document.createElement('div');
@@ -262,80 +233,54 @@
 
     // --- 2. PERMISSION & ROOM LOGIC ---
     
-    async function requestPermissionsAndCreate() {
+    async function getMedia() {
       try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            console.warn("Media devices not available (use HTTPS or localhost)");
+            return;
+        }
+        // Try Video + Audio
         myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        setupStream(true, true); 
-        createRoomLogic();
-      } catch (err) {
-        if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError' || err.name === 'NotReadableError') {
-            try {
-                console.log("Camera failed, trying audio only...");
-                myStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-                setupStream(false, true);
-                createRoomLogic();
-            } catch (micErr) { handlePermissionError(micErr); }
-        } else { handlePermissionError(err); }
+        setupStream(true, true);
+        console.log("Media acquired: Video + Audio");
+      } catch (e1) {
+        console.log("Video+Audio failed:", e1.message);
+        try {
+          // Fallback 1: Just Audio
+          myStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+          setupStream(false, true);
+          console.log("Media acquired: Audio Only");
+        } catch (e2) {
+          console.log("Audio only failed:", e2.message);
+          // Fallback 2: No media
+          myStream = null;
+        }
       }
     }
 
-    async function requestPermissionsAndJoin() {
-      try {
-        myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        setupStream(true, true);
-        joinRoomLogic();
-      } catch (err) {
-        if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError' || err.name === 'NotReadableError') {
-            try {
-                console.log("Camera failed, trying audio only...");
-                myStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-                setupStream(false, true);
-                joinRoomLogic();
-            } catch (micErr) { handlePermissionError(micErr); }
-        } else { handlePermissionError(err); }
-      }
+    async function handleCreate() {
+      myName = document.getElementById('usernameInput').value || 'Host';
+      await getMedia();
+      socket.emit('create-room', { name: myName });
+    }
+
+    async function handleJoin() {
+      const roomId = document.getElementById('roomCodeInput').value;
+      if(!roomId) return;
+      myName = document.getElementById('usernameInput').value || 'Guest';
+      await getMedia();
+      socket.emit('join-room', { roomId: roomId, name: myName });
     }
     
     function setupStream(hasVideo, micOn) {
         isMicOn = micOn;
-        if(myStream && myStream.getAudioTracks().length > 0) {
-            myStream.getAudioTracks()[0].enabled = micOn;
-        }
-        
-        if(hasVideo && myStream && myStream.getVideoTracks().length > 0) {
+        if(myStream) myStream.getAudioTracks()[0].enabled = micOn;
+        if(hasVideo && myStream) {
             isCamOn = false;
             myStream.getVideoTracks()[0].enabled = false; 
         }
         updateMicUI();
         updateCamUI();
-    }
-
-    function handlePermissionError(err) {
-      console.error(err);
-      let msg = "Permission Error.\n\n";
-      if(err.name === 'NotAllowedError') {
-        msg += "Microphone access was BLOCKED.\n\nHOW TO FIX:\n1. Tap the Lock icon or 'i' icon in the URL bar.\n2. Find 'Microphone' and change it to 'Allow'.\n3. Refresh the page.";
-      } else if (err.name === 'NotFoundError') {
-        msg += "No Microphone found.";
-      } else {
-        msg += "Connection might not be secure or device is busy.";
-      }
-      alert(msg);
-    }
-
-    function handleCreate() { requestPermissionsAndCreate(); }
-    function handleJoin() { requestPermissionsAndJoin(); }
-
-    function createRoomLogic() {
-      myName = document.getElementById('usernameInput').value || 'Host';
-      socket.emit('create-room', { name: myName });
-    }
-
-    function joinRoomLogic() {
-      myName = document.getElementById('usernameInput').value || 'Guest';
-      const roomId = document.getElementById('roomCodeInput').value;
-      if(!roomId) return alert('Enter code');
-      socket.emit('join-room', { roomId: roomId, name: myName });
     }
     
     socket.on('room-created', (data) => { isHost = true; initRoom(data.roomId); });
@@ -343,7 +288,6 @@
     socket.on('room-joined', (data) => { 
       isHost = false; 
       initRoom(data.roomId); 
-      if(data.welcomeMsg) showJoinOverlay(data.welcomeMsg);
       if(data.videoSrc && data.videoSrc.length > 0) {
         video.src = data.videoSrc;
         document.getElementById('guestWaiting').classList.add('hidden');
@@ -358,7 +302,6 @@
     
     function initRoom(id) {
       document.getElementById('entryPage').style.display = 'none';
-      document.getElementById('splash-screen').style.display = 'none';
       document.getElementById('watchRoom').classList.remove('hidden');
       document.getElementById('displayRoomCodeChat').innerText = id;
       
@@ -402,7 +345,6 @@
     socket.on('get-state', (data) => socket.emit('send-state', { to: data.requester, time: video.currentTime, playing: !video.paused }));
 
     // --- 4. SOURCE & CHAT ---
-    function updateWelcomeMsg(msg) { if(isHost) socket.emit('set-welcome', { msg }); }
     function toggleSource() { if(isHost) document.getElementById('sourceControls').classList.toggle('hidden'); }
     function loadLink() {
       if(!isHost) return;
@@ -432,7 +374,7 @@
       socket.emit('chat-message', { name: myName, msg: input.value });
       input.value = '';
     }
-    socket.on('chat-message', (data) => addChatMessage(data.name, data.msg, '#00f3ff')); /* Updated to theme color */
+    socket.on('chat-message', (data) => addChatMessage(data.name, data.msg, '#00d4aa'));
 
     function toggleChat() {
       const sidebar = document.getElementById('sidebar');
@@ -460,11 +402,6 @@
       document.getElementById('micOn').classList.toggle('hidden', !isMicOn);
       document.getElementById('micOff').classList.toggle('hidden', isMicOn);
       document.getElementById('micBtn').classList.toggle('active', isMicOn);
-      
-      if(!myStream || !myStream.getAudioTracks().length) {
-        document.getElementById('micBtn').classList.add('disabled');
-        document.getElementById('micBtn').title = "No Microphone";
-      }
     }
 
     function updateCamUI() {
@@ -473,22 +410,17 @@
       document.getElementById('camOn').classList.toggle('hidden', !isCamOn);
       document.getElementById('camOff').classList.toggle('hidden', isCamOn);
       document.getElementById('camBtn').classList.toggle('active', isCamOn);
-
-      if(!myStream || tracks.length === 0) {
-        document.getElementById('camBtn').classList.add('disabled');
-        document.getElementById('camBtn').title = "No Camera";
-      }
     }
 
     function toggleMic() {
-      if(!myStream) return alert("Media access was not granted.");
+      if(!myStream) return;
       const track = myStream.getAudioTracks()[0];
       if(track) track.enabled = !track.enabled;
       updateMicUI();
     }
 
     function toggleCam() { 
-      if(!myStream) return alert("Media access was not granted.");
+      if(!myStream) return;
       const tracks = myStream.getVideoTracks();
       if(tracks.length > 0) tracks[0].enabled = !tracks[0].enabled;
       updateCamUI();
@@ -496,6 +428,7 @@
 
     document.getElementById('micBtn').onclick = toggleMic;
     
+    // WebRTC User Joined
     socket.on('user-joined', async (data) => {
       if(isHost) {
         const pc = createPeerConnection(data.id);
@@ -508,6 +441,7 @@
       addChatMessage('System', `${data.name} joined`, '#888');
     });
 
+    // WebRTC Signal Handling
     socket.on('signal', async (data) => {
       const fromId = data.from;
       if (!peers[fromId]) { 
@@ -532,6 +466,7 @@
       }
     });
 
+    // Peer Connection Setup (The Fix for No Camera PC)
     function createPeerConnection(peerId) {
       const config = { 
         iceServers: [
@@ -541,9 +476,13 @@
       };
       const pc = new RTCPeerConnection(config);
       
+      // CRITICAL FIX: 
+      // Even if myStream is null (PC has no camera), we tell the browser 
+      // "I want to RECEIVE video and audio from the other person".
       pc.addTransceiver('video', { direction: 'recvonly' });
       pc.addTransceiver('audio', { direction: 'recvonly' });
 
+      // If we DO have a stream, send it
       if(myStream) myStream.getTracks().forEach(track => pc.addTrack(track, myStream));
       
       pc.ontrack = (event) => {
