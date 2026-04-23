@@ -18,7 +18,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// Serve static files from 'public' folder
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
@@ -27,12 +26,10 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
 
-// Explicit route for watch page
 app.get('/watch.html', (req, res) => {
   res.sendFile(__dirname + '/public/watch.html');
 });
 
-// Video Upload Endpoint
 app.post('/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
   res.json({ filePath: `/uploads/${req.file.filename}` });
@@ -44,7 +41,6 @@ const rooms = {}; // In-Memory Storage
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // 1. Create Room
   socket.on('create-room', (data) => {
     const roomId = generateRoomId();
     rooms[roomId] = {
@@ -59,7 +55,6 @@ io.on('connection', (socket) => {
     socket.emit('room-created', { roomId });
   });
 
-  // 2. Join Room
   socket.on('join-room', (data) => {
     const room = rooms[data.roomId];
     if (!room) return socket.emit('error', 'Room not found or expired');
@@ -77,12 +72,10 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 3. WebRTC Signaling
   socket.on('signal', (data) => {
     io.to(data.to).emit('signal', { from: socket.id, signal: data.signal });
   });
 
-  // 4. Video Source Change
   socket.on('change-src', (data) => {
     if (socket.roomId && rooms[socket.roomId]) {
       rooms[socket.roomId].videoSrc = data.src;
@@ -90,7 +83,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 5. Video Sync
   socket.on('sync-video', (data) => {
     if(socket.roomId) socket.broadcast.to(socket.roomId).emit('sync-video', data);
   });
@@ -106,7 +98,6 @@ io.on('connection', (socket) => {
     if(data.playing) io.to(data.to).emit('sync-video', { type: 'play' });
   });
 
-  // 6. Chat
   socket.on('chat-message', (data) => {
     if(socket.roomId) io.to(socket.roomId).emit('chat-message', data);
   });
