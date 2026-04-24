@@ -98,7 +98,6 @@
   <!-- MAIN UI -->
   <div id="watchRoom" class="hidden h-screen w-screen flex relative">
     <div class="flex-1 flex flex-col bg-black relative video-wrapper" id="videoWrapper">
-      <!-- Added preload="metadata" to optimize initial load -->
       <video id="mainVideo" class="w-full h-full" playsinline preload="metadata"></video>
       
       <div class="video-controls flex flex-col justify-end">
@@ -163,6 +162,33 @@
     let myUid = localStorage.getItem('watchNightUid');
     let syncInterval;
     let hideTimeout;
+
+    // --- AUDIO BOOST LOGIC (200%) ---
+    let audioContext;
+    let gainNode;
+
+    function initAudioBooster() {
+        if (audioContext) return;
+        
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioContext.createMediaElementSource(video);
+            gainNode = audioContext.createGain();
+            
+            // Set volume to 200% (2.0)
+            gainNode.gain.value = 2.0; 
+            
+            source.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            console.log("Audio Booster Initialized: 200% Volume");
+        } catch (e) {
+            console.error("Audio Boost Error:", e);
+        }
+    }
+
+    // Initialize booster on first user interaction (Click/Play)
+    document.body.addEventListener('click', () => initAudioBooster(), { once: true });
+    video.addEventListener('play', () => initAudioBooster(), { once: true });
 
     window.onload = async () => {
       if(!partyCode) window.location.href = '/';
