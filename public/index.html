@@ -2,19 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Watch-Night | Hub</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
   <style>
     :root { --primary: #00f3ff; --secondary: #bc13fe; --bg: #050505; }
-    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow: hidden; }
+    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow-x: hidden; }
     
     @keyframes fadeInUp { 0% { opacity: 0; transform: translateY(30px); } 100% { opacity: 1; transform: translateY(0); } }
     @keyframes glowPulse { 0% { text-shadow: 0 0 10px var(--primary), 0 0 20px var(--primary); } 50% { text-shadow: 0 0 20px var(--primary), 0 0 40px var(--primary), 0 0 60px var(--secondary); } 100% { text-shadow: 0 0 10px var(--primary), 0 0 20px var(--primary); } }
     
     #splash-screen { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at center, #0a0a12 0%, #000000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease; }
-    #splash-screen.hidden { opacity: 0; visibility: hidden; }
+    #splash-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 
     .splash-title { font-family: 'Orbitron', sans-serif; font-size: 10vw; font-weight: 900; color: white; z-index: 1; text-align: center; line-height: 0.9; background: transparent; border: none; }
     .splash-title span { color: var(--primary); display: inline-block; animation: glowPulse 2s infinite; }
@@ -26,15 +26,29 @@
     .mode-card { transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); transform-style: preserve-3d; perspective: 1000px; }
     .mode-card:hover { transform: translateY(-10px) scale(1.02); border-color: var(--primary); box-shadow: 0 20px 40px rgba(0, 243, 255, 0.2); }
     
-    .code-container { position: relative; padding: 20px 40px; border-radius: 20px; background: linear-gradient(135deg, rgba(0, 243, 255, 0.1), rgba(188, 19, 254, 0.1)); border: 1px solid rgba(0, 243, 255, 0.3); animation: float 3s ease-in-out infinite; }
+    .code-container { position: relative; padding: 15px 20px; border-radius: 20px; background: linear-gradient(135deg, rgba(0, 243, 255, 0.1), rgba(188, 19, 254, 0.1)); border: 1px solid rgba(0, 243, 255, 0.3); animation: float 3s ease-in-out infinite; }
     @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
-    .code-container::before { content: ''; position: absolute; inset: -2px; border-radius: 22px; background: linear-gradient(45deg, var(--primary), var(--secondary), var(--primary)); z-index: -1; opacity: 0.5; filter: blur(10px); }
-    .code-text { font-family: 'Orbitron', sans-serif; font-size: 4rem; font-weight: 900; background: linear-gradient(to bottom, #fff, #00f3ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: 8px; text-shadow: 0 0 20px rgba(0, 243, 255, 0.5); }
+    
+    /* RESPONSIVE CODE TEXT */
+    .code-text { 
+        font-family: 'Orbitron', sans-serif; 
+        font-weight: 900; 
+        /* Fluid font size: min size 2rem, preferred 8vw, max size 4rem */
+        font-size: clamp(1.5rem, 8vw, 4rem); 
+        background: linear-gradient(to bottom, #fff, #00f3ff); 
+        -webkit-background-clip: text; 
+        -webkit-text-fill-color: transparent; 
+        letter-spacing: 4px; 
+        text-shadow: 0 0 20px rgba(0, 243, 255, 0.5); 
+    }
 
     .anim-fade-in-up { animation: fadeInUp 0.8s ease forwards; opacity: 0; }
 
     #errorModal { position: fixed; inset: 0; z-index: 99999; background: rgba(0,0,0,0.9); display: none; align-items: center; justify-content: center; }
     .error-box { background: rgba(20, 10, 10, 0.9); border: 2px solid #ff4757; padding: 40px; border-radius: 20px; text-align: center; max-width: 400px; }
+    
+    /* Prevent iOS Zoom on inputs */
+    input[type="text"] { font-size: 16px; }
   </style>
 </head>
 <body>
@@ -60,9 +74,9 @@
 
   <!-- SETUP CONTAINER -->
   <div id="setupContainer" class="hidden h-screen w-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-lg glass p-8 rounded-2xl border-l-4 border-l-[var(--primary)] anim-fade-in-up">
+    <div class="w-full max-w-lg glass p-6 md:p-8 rounded-2xl border-l-4 border-l-[var(--primary)] anim-fade-in-up">
       <div class="text-center mb-8">
-        <h1 class="text-4xl font-bold" style="font-family: 'Orbitron'; text-shadow: 0 0 10px var(--primary);">START PARTY</h1>
+        <h1 class="text-3xl md:text-4xl font-bold" style="font-family: 'Orbitron'; text-shadow: 0 0 10px var(--primary);">START PARTY</h1>
       </div>
 
       <div class="space-y-4">
@@ -80,11 +94,11 @@
 
   <!-- LOBBY CONTAINER -->
   <div id="lobbyContainer" class="hidden h-screen w-screen flex flex-col items-center justify-center p-4">
-    <div class="w-full max-w-5xl text-center anim-fade-in-up"> <!-- Increased max-width slightly -->
+    <div class="w-full max-w-5xl text-center anim-fade-in-up">
       
       <!-- Code Display -->
-      <div class="mb-12 flex flex-col items-center">
-         <p class="text-gray-400 text-sm uppercase tracking-widest mb-2">Connected to Party</p>
+      <div class="mb-8 md:mb-12 flex flex-col items-center">
+         <p class="text-gray-400 text-xs md:text-sm uppercase tracking-widest mb-2">Connected to Party</p>
          <div class="code-container">
            <div id="displayCode" class="code-text">------</div>
          </div>
@@ -94,46 +108,46 @@
          </button>
       </div>
 
-      <h3 class="text-xl text-gray-300 mb-8 uppercase tracking-widest">Select Mode</h3>
+      <h3 class="text-lg md:text-xl text-gray-300 mb-6 uppercase tracking-widest">Select Mode</h3>
 
-      <!-- Updated Grid: 2 cols on tablet, 4 cols on desktop -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
+      <!-- Grid: 2 cols on tablet, 4 cols on desktop, 1 col on very small mobile if needed -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 w-full px-2">
         
         <!-- Watch Together -->
-        <a href="watch.html" class="mode-card glass p-6 rounded-2xl cursor-pointer border border-white/10 flex flex-col items-center justify-center h-48 relative overflow-hidden group">
+        <a href="watch.html" class="mode-card glass p-4 md:p-6 rounded-2xl cursor-pointer border border-white/10 flex flex-col items-center justify-center h-40 md:h-48 relative overflow-hidden group">
           <div class="absolute inset-0 bg-gradient-to-b from-[var(--primary)]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <div class="text-5xl mb-3 transform group-hover:scale-110 transition-transform">🎬</div>
-          <h2 class="text-xl font-bold" style="font-family: 'Orbitron'">Watch Together</h2>
-          <p class="text-xs text-gray-500 mt-1">Stream in Sync</p>
+          <div class="text-4xl md:text-5xl mb-2 md:mb-3 transform group-hover:scale-110 transition-transform">🎬</div>
+          <h2 class="text-base md:text-xl font-bold" style="font-family: 'Orbitron'">Watch Together</h2>
+          <p class="text-[10px] md:text-xs text-gray-500 mt-1">Stream in Sync</p>
         </a>
 
         <!-- Tic Tac Toe -->
-        <a href="game.html" class="mode-card glass p-6 rounded-2xl cursor-pointer border border-white/10 flex flex-col items-center justify-center h-48 relative overflow-hidden group">
+        <a href="game.html" class="mode-card glass p-4 md:p-6 rounded-2xl cursor-pointer border border-white/10 flex flex-col items-center justify-center h-40 md:h-48 relative overflow-hidden group">
           <div class="absolute inset-0 bg-gradient-to-b from-[var(--secondary)]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <div class="text-5xl mb-3 transform group-hover:scale-110 transition-transform">⭕</div>
-          <h2 class="text-xl font-bold" style="font-family: 'Orbitron'">Tic Tac Toe</h2>
-          <p class="text-xs text-gray-500 mt-1">Classic Battle</p>
+          <div class="text-4xl md:text-5xl mb-2 md:mb-3 transform group-hover:scale-110 transition-transform">⭕</div>
+          <h2 class="text-base md:text-xl font-bold" style="font-family: 'Orbitron'">Tic Tac Toe</h2>
+          <p class="text-[10px] md:text-xs text-gray-500 mt-1">Classic Battle</p>
         </a>
 
         <!-- Think & Draw -->
-        <a href="draw.html" class="mode-card glass p-6 rounded-2xl cursor-pointer border border-white/10 flex flex-col items-center justify-center h-48 relative overflow-hidden group">
+        <a href="draw.html" class="mode-card glass p-4 md:p-6 rounded-2xl cursor-pointer border border-white/10 flex flex-col items-center justify-center h-40 md:h-48 relative overflow-hidden group">
           <div class="absolute inset-0 bg-gradient-to-b from-green-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <div class="text-5xl mb-3 transform group-hover:scale-110 transition-transform">🎨</div>
-          <h2 class="text-xl font-bold" style="font-family: 'Orbitron'">Think & Draw</h2>
-          <p class="text-xs text-gray-500 mt-1">Guess the Drawing</p>
+          <div class="text-4xl md:text-5xl mb-2 md:mb-3 transform group-hover:scale-110 transition-transform">🎨</div>
+          <h2 class="text-base md:text-xl font-bold" style="font-family: 'Orbitron'">Think & Draw</h2>
+          <p class="text-[10px] md:text-xs text-gray-500 mt-1">Guess the Drawing</p>
         </a>
 
         <!-- Ludo -->
-        <a href="ludo.html" class="mode-card glass p-6 rounded-2xl cursor-pointer border border-white/10 flex flex-col items-center justify-center h-48 relative overflow-hidden group">
+        <a href="ludo.html" class="mode-card glass p-4 md:p-6 rounded-2xl cursor-pointer border border-white/10 flex flex-col items-center justify-center h-40 md:h-48 relative overflow-hidden group">
           <div class="absolute inset-0 bg-gradient-to-b from-orange-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <div class="text-5xl mb-3 transform group-hover:scale-110 transition-transform">🎲</div>
-          <h2 class="text-xl font-bold" style="font-family: 'Orbitron'">Ludo</h2>
-          <p class="text-xs text-gray-500 mt-1">Board Game</p>
+          <div class="text-4xl md:text-5xl mb-2 md:mb-3 transform group-hover:scale-110 transition-transform">🎲</div>
+          <h2 class="text-base md:text-xl font-bold" style="font-family: 'Orbitron'">Ludo</h2>
+          <p class="text-[10px] md:text-xs text-gray-500 mt-1">Board Game</p>
         </a>
 
       </div>
       
-      <button onclick="leaveParty()" class="mt-10 text-gray-600 hover:text-red-500 text-sm transition-colors">Leave Party</button>
+      <button onclick="leaveParty()" class="mt-8 md:mt-10 text-gray-600 hover:text-red-500 text-sm transition-colors">Leave Party</button>
     </div>
   </div>
 
@@ -150,26 +164,17 @@
 
     window.onload = () => {
       initVoiceSystem(socket);
-      
-      // Check if we are returning from a subpage (Back Button)
       const urlParams = new URLSearchParams(window.location.search);
       const skipSplash = urlParams.get('skipSplash');
 
       if (skipSplash === '1') {
-        // INSTANT LOAD: Skip animation, clear parameter from URL
         window.history.replaceState({}, document.title, window.location.pathname);
         document.getElementById('splash-screen').classList.add('hidden');
-        
         const existingCode = localStorage.getItem('partyCode');
         const existingName = localStorage.getItem('watchNightName');
-        
-        if (existingCode && existingName) {
-          socket.emit('join-party', { roomId: existingCode, name: existingName, uid });
-        } else {
-          setupContainer.classList.remove('hidden');
-        }
+        if (existingCode && existingName) socket.emit('join-party', { roomId: existingCode, name: existingName, uid });
+        else setupContainer.classList.remove('hidden');
       } else {
-        // NORMAL LOAD: Play animation (Increased to 3000ms)
         setTimeout(() => {
           document.getElementById('splash-screen').classList.add('hidden');
           const existingCode = localStorage.getItem('partyCode');
