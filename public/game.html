@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Watch-Night | Game</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root { --primary: #00f3ff; --secondary: #bc13fe; --bg: #050505; }
+    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow: hidden; }
+    .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; }
+    .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--primary); }
+    
+    .ttt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 300px; height: 300px; }
+    .ttt-cell { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron'; font-size: 4rem; cursor: pointer; transition: all 0.2s; }
+    .ttt-cell:hover { background: rgba(255,255,255,0.1); }
+    .ttt-cell.p1 { color: var(--primary); text-shadow: 0 0 20px var(--primary); }
+    .ttt-cell.p2 { color: var(--secondary); text-shadow: 0 0 20px var(--secondary); }
+    .ttt-cell.disabled { pointer-events: none; opacity: 0.5; }
+    
+    /* Added missing color classes for the header */
+    .p1-color { color: var(--primary); text-shadow: 0 0 10px var(--primary); }
+    .p2-color { color: var(--secondary); text-shadow: 0 0 10px var(--secondary); }
+
+    /* Back Button Styles */
+    #backBtn { position: fixed; top: 20px; left: 20px; z-index: 100; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); padding: 8px 12px; border-radius: 8px; display: flex; align-items: center; gap: 5px; text-decoration: none; color: white; font-size: 14px; transition: all 0.3s; }
+    #backBtn:hover { background: var(--primary); color: black; }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+
+  <!-- Back to Lobby Button -->
+  <!-- FIX: Removed localStorage clear, added skipSplash -->
+  <a href="/?skipSplash=1" id="backBtn">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+    Lobby
+  </a>
+
+  <div id="noCodeScreen" class="hidden h-screen w-screen flex items-center justify-center flex-col z-50 bg-black">
+    <h1 class="text-2xl font-bold text-red-500">No Party Code Found</h1>
+    <a href="/" class="mt-4 neon-btn px-6 py-2 rounded-lg">Go to Hub</a>
+  </div>
+
+  <div id="waitingScreen" class="hidden h-screen w-screen flex flex-col items-center justify-center">
+     <div class="text-2xl mb-4">Connecting to Party...</div>
+     <div id="displayCode" class="text-xl text-gray-400"></div>
+  </div>
+
+  <div id="gameArea" class="hidden flex-1 flex flex-col items-center justify-center p-4"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/voice-manager.js"></script>
+  <script>
+    const socket = io();
+    let myName = localStorage.getItem('watchNightName');
+    let partyCode = localStorage.getItem('partyCode');
+    let currentGame = null;
+
+    window.onload = () => {
+      if(!partyCode) {
+        document.getElementById('noCodeScreen').classList.remove('hidden');
+        return;
+      }
+      
+      // Init Voice using same Party Code
+      initVoiceSystem(socket);
+
+      document.getElementById('waitingScreen').classList.remove('hidden');
+      document.getElementById('displayCode').innerText = `Party: ${partyCode}`;
+      
+      // Join Voice Room
+      socket.emit('join-party', { roomId: partyCode, name: myName, uid: localStorage.getItem('watchNightUid') });
+      
+      // Join Game Room
+      socket.emit('join-game-room', { roomId: partyCode, name: myName });
+    };
+
+    socket.on('party-joined', (data) => {
+       // Start voice chat
+       startVoice(data.roomId, myName);
+    });
+
+    socket.on('game-waiting', () => {
+       document.getElementById('gameArea').innerHTML = '<div class="text-center"><div class="text-xl animate-pulse">Waiting for Opponent...</div><div class="text-gray-400 mt-2">Share the Party Code</div></div>';
+       document.getElementById('gameArea').classList.remove('hidden');
+    });
+
+    socket.on('game-start', (game) => {
+      currentGame = game;
+      renderGame();
+    });
+
+    socket.on('game-update', (data) => {
+      currentGame.board = data.board;
+      currentGame.turn = data.turn;
+      currentGame.players = data.players;
+      renderGame(data.result);
+    });
+
+    socket.on('game-error', (msg) => {
+      alert(msg);
+      window.location.href = '/';
+    });
+
+    // Render the Tic Tac Toe Board
+    function renderGame(result = null) {
+      const me = currentGame.players.find(p => p.id === socket.id);
+      const opp = currentGame.players.find(p => p.id !== socket.id);
+      const isMyTurn = currentGame.turn === me.symbol;
+
+      let html = `
+        <div class="glass p-4 rounded-xl mb-6 flex justify-between w-full max-w-md">
+            <div class="text-center ${me.symbol === 'X' ? 'p1-color' : 'p2-color'}">
+                <div class="font-bold">${me.name} (You)</div>
+            </div>
+            <div class="text-2xl font-bold text-white">VS</div>
+            <div class="text-center ${opp.symbol === 'X' ? 'p1-color' : 'p2-color'}">
+                <div class="font-bold">${opp.name}</div>
+            </div>
+        </div>
+        <h3 class="text-xl font-bold mb-4 ${isMyTurn ? 'text-green-400' : 'text-gray-400'}">
+            ${result ? (result.draw ? 'Draw!' : (result.winner === me.symbol ? 'You Win!' : 'You Lose!')) : (isMyTurn ? 'Your Turn' : 'Opponent Turn')}
+        </h3>
+        <div class="ttt-grid">
+      `;
+
+      currentGame.board.forEach((cell, i) => {
+        html += `<div class="ttt-cell ${cell === 'X' ? 'p1' : (cell === 'O' ? 'p2' : '')} ${!isMyTurn || cell ? 'disabled' : ''}" onclick="move(${i})">${cell || ''}</div>`;
+      });
+
+      html += `</div>`;
+      document.getElementById('gameArea').innerHTML = html;
+      document.getElementById('gameArea').classList.remove('hidden');
+      document.getElementById('waitingScreen').classList.add('hidden');
+    }
+
+    function move(index) {
+      socket.emit('play-move', { index });
+    }
+  </script>
+</body>
+</html>
