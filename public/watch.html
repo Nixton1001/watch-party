@@ -98,13 +98,13 @@
   <!-- MAIN UI -->
   <div id="watchRoom" class="hidden h-screen w-screen flex relative">
     <div class="flex-1 flex flex-col bg-black relative video-wrapper" id="videoWrapper">
-      <video id="mainVideo" class="w-full h-full" playsinline></video>
+      <!-- Added preload="metadata" to optimize initial load -->
+      <video id="mainVideo" class="w-full h-full" playsinline preload="metadata"></video>
       
       <div class="video-controls flex flex-col justify-end">
         <div id="progressContainer" class="progress-container"><div id="progressBar" class="progress-bar"></div></div>
         
         <div class="flex items-center justify-between">
-          <!-- Left Controls -->
           <div class="flex items-center gap-1">
              <button onclick="skip(-10)" class="control-btn round" title="Back 10s">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.334 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"/></svg>
@@ -122,7 +122,6 @@
             <span id="timeDisplay" class="text-sm font-mono text-gray-300 ml-2">0:00</span>
           </div>
 
-          <!-- Right Controls -->
           <div class="flex items-center gap-1">
              <button onclick="toggleVoiceMic()" id="localMicBtn" class="control-btn round" title="Toggle Mic">
                 <svg id="localMicIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
@@ -168,24 +167,15 @@
     window.onload = async () => {
       if(!partyCode) window.location.href = '/';
       document.getElementById('watchRoom').classList.remove('hidden');
-      
       window.customMicUI = true; 
-      
       initVoiceSystem(socket);
       setupAutoHide();
-      
       socket.emit('join-party', { roomId: partyCode, name: myName, uid: myUid });
     };
 
     function setupAutoHide() {
-        const showControls = () => {
-            wrapper.classList.remove('controls-hidden');
-            clearTimeout(hideTimeout);
-            if (!video.paused) hideTimeout = setTimeout(() => wrapper.classList.add('controls-hidden'), 4000);
-        };
-        wrapper.addEventListener('mousemove', showControls);
-        wrapper.addEventListener('touchstart', showControls);
-        wrapper.addEventListener('click', showControls);
+        const showControls = () => { wrapper.classList.remove('controls-hidden'); clearTimeout(hideTimeout); if (!video.paused) hideTimeout = setTimeout(() => wrapper.classList.add('controls-hidden'), 4000); };
+        wrapper.addEventListener('mousemove', showControls); wrapper.addEventListener('touchstart', showControls); wrapper.addEventListener('click', showControls);
         video.onpause = () => { wrapper.classList.remove('controls-hidden'); clearTimeout(hideTimeout); updateIcons(); };
         video.onplay = () => { showControls(); updateIcons(); if(isHost) socket.emit('sync-video', { type: 'play', time: video.currentTime }); };
     }
@@ -193,41 +183,22 @@
     socket.on('party-joined', (data) => {
       isHost = data.isHost;
       startVoice(data.roomId, myName); 
-      
       if (isHost) {
-          if(data.videoSrc) {
-              video.src = data.videoSrc; 
-              video.play();
-              document.getElementById('hostSetupModal').classList.add('hidden');
-          } else {
-              document.getElementById('hostSetupModal').classList.remove('hidden');
-              document.getElementById('hostDisplayCode').innerText = partyCode;
-          }
+          if(data.videoSrc) { video.src = data.videoSrc; video.play(); document.getElementById('hostSetupModal').classList.add('hidden'); }
+          else { document.getElementById('hostSetupModal').classList.remove('hidden'); document.getElementById('hostDisplayCode').innerText = partyCode; }
       } else {
-          if(data.welcomeMsg) {
-              document.getElementById('welcomeText').innerText = data.welcomeMsg;
-              document.getElementById('welcomeModal').classList.remove('hidden');
-          }
-          if(data.videoSrc) {
-              video.src = data.videoSrc; 
-              video.play();
-              startUltraSync(); 
-              document.getElementById('guestWaitingScreen').classList.add('hidden');
-          } else {
-              document.getElementById('guestWaitingScreen').classList.remove('hidden');
-          }
+          if(data.welcomeMsg) { document.getElementById('welcomeText').innerText = data.welcomeMsg; document.getElementById('welcomeModal').classList.remove('hidden'); }
+          if(data.videoSrc) { video.src = data.videoSrc; video.play(); startUltraSync(); document.getElementById('guestWaitingScreen').classList.add('hidden'); }
+          else { document.getElementById('guestWaitingScreen').classList.remove('hidden'); }
       }
     });
 
     function closeWelcome() { document.getElementById('welcomeModal').classList.add('hidden'); }
 
     function hostLoadLink() {
-        const url = document.getElementById('videoLinkInput').value;
-        if(!url) return;
-        const msg = document.getElementById('welcomeMsgInput').value;
-        if(msg) socket.emit('set-welcome-msg', { msg });
-        video.src = url; video.play();
-        socket.emit('sync-video', { type: 'src', src: url });
+        const url = document.getElementById('videoLinkInput').value; if(!url) return;
+        const msg = document.getElementById('welcomeMsgInput').value; if(msg) socket.emit('set-welcome-msg', { msg });
+        video.src = url; video.play(); socket.emit('sync-video', { type: 'src', src: url });
         document.getElementById('hostSetupModal').classList.add('hidden');
     }
 
@@ -235,69 +206,32 @@
         if (input.files[0]) {
             document.getElementById('uploadLabel').innerText = "Uploading...";
             const formData = new FormData(); formData.append('video', input.files[0]);
-            const msg = document.getElementById('welcomeMsgInput').value;
-            if(msg) socket.emit('set-welcome-msg', { msg });
+            const msg = document.getElementById('welcomeMsgInput').value; if(msg) socket.emit('set-welcome-msg', { msg });
             try {
                 const res = await fetch('/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                if (data.filePath) { 
-                    video.src = data.filePath; 
-                    video.play(); 
-                    socket.emit('sync-video', { type: 'src', src: data.filePath }); 
-                    document.getElementById('hostSetupModal').classList.add('hidden'); 
-                }
+                if (data.filePath) { video.src = data.filePath; video.play(); socket.emit('sync-video', { type: 'src', src: data.filePath }); document.getElementById('hostSetupModal').classList.add('hidden'); }
             } catch(e) { alert("Upload failed"); }
         }
     }
 
-    // --- IMPROVED SYNC LOGIC ---
-    
-    function startUltraSync() { 
-        if(syncInterval) clearInterval(syncInterval); 
-        // Sync every 10 seconds instead of 1 second to prevent stuttering
-        syncInterval = setInterval(() => socket.emit('request-sync'), 10000); 
-    }
-    
+    function startUltraSync() { if(syncInterval) clearInterval(syncInterval); syncInterval = setInterval(() => socket.emit('request-sync'), 10000); }
     function skip(seconds) { video.currentTime += seconds; if(isHost) socket.emit('sync-video', { type: 'seek', time: video.currentTime }); }
 
     socket.on('sync-video', (data) => {
       const isBuffering = video.readyState < 3;
-
-      if(data.type === 'play') {
-          // Only seek if severely desynced
-          if (!isBuffering && Math.abs(video.currentTime - data.time) > 3) {
-              video.currentTime = data.time;
-          }
-          video.play(); 
-      }
-      else if(data.type === 'pause') { 
-          video.currentTime = data.time || video.currentTime; 
-          video.pause(); 
-      }
-      else if(data.type === 'seek') { 
-           // Only seek if difference is noticeable (> 1s)
-           if (!isBuffering && Math.abs(video.currentTime - data.time) > 1.0) {
-             video.currentTime = data.time; 
-           }
-      }
-      else if(data.type === 'src') { 
-          video.src = data.src; 
-          video.play(); 
-          document.getElementById('guestWaitingScreen').classList.add('hidden'); 
-          startUltraSync(); 
-      }
+      if(data.type === 'play') { if (!isBuffering && Math.abs(video.currentTime - data.time) > 3) video.currentTime = data.time; video.play(); }
+      else if(data.type === 'pause') { video.currentTime = data.time || video.currentTime; video.pause(); }
+      else if(data.type === 'seek') { if (!isBuffering && Math.abs(video.currentTime - data.time) > 1.0) video.currentTime = data.time; }
+      else if(data.type === 'src') { video.src = data.src; video.play(); document.getElementById('guestWaitingScreen').classList.add('hidden'); startUltraSync(); }
     });
     
     socket.on('get-state', (data) => socket.emit('send-state', { to: data.requester, time: video.currentTime, playing: !video.paused }));
-    
     socket.on('user-disconnected', (data) => console.log("User left:", data.id));
 
     function togglePlayPause() { if(video.paused) video.play(); else video.pause(); }
     video.onseeked = () => { if(isHost) socket.emit('sync-video', { type: 'seek', time: video.currentTime }); };
-    video.ontimeupdate = () => { 
-        progressBar.style.width = (video.currentTime / video.duration) * 100 + '%'; 
-        document.getElementById('timeDisplay').innerText = formatTime(video.currentTime); 
-    };
+    video.ontimeupdate = () => { progressBar.style.width = (video.currentTime / video.duration) * 100 + '%'; document.getElementById('timeDisplay').innerText = formatTime(video.currentTime); };
     progressContainer.onclick = (e) => video.currentTime = (e.offsetX / progressContainer.clientWidth) * video.duration;
     
     function updateIcons() { document.getElementById('playIcon').classList.toggle('hidden', !video.paused); document.getElementById('pauseIcon').classList.toggle('hidden', video.paused); }
