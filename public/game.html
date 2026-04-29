@@ -13,8 +13,8 @@
     .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; }
     .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--primary); }
     
-    .ttt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 300px; height: 300px; }
-    .ttt-cell { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron'; font-size: 4rem; cursor: pointer; transition: all 0.2s; width: 100%; height: 100%; box-sizing: border-box; }
+    .ttt-grid { display: grid; grid-template-columns: repeat(3, 90px); grid-template-rows: repeat(3, 90px); gap: 8px; }
+    .ttt-cell { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron'; font-size: 2.8rem; line-height: 1; cursor: pointer; transition: all 0.2s; min-width: 90px; min-height: 90px; max-width: 90px; max-height: 90px; overflow: hidden; }
     .ttt-cell:hover { background: rgba(255,255,255,0.1); }
     .ttt-cell.p1 { color: var(--primary); text-shadow: 0 0 20px var(--primary); }
     .ttt-cell.p2 { color: var(--secondary); text-shadow: 0 0 20px var(--secondary); }
@@ -148,6 +148,14 @@
     socket.on('game-error', (msg) => {
       alert(msg);
       window.location.href = '/';
+    });
+
+    // Other player requested restart — update button text
+    socket.on('restart-requested', () => {
+      const btn = document.getElementById('restartBtn');
+      if (btn && !restartRequested) {
+        btn.textContent = 'Opponent wants rematch!';
+      }
     });
 
     // Clear auto-restart timers
