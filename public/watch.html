@@ -241,7 +241,7 @@
         }
     }
 
-    function startUltraSync() { if(syncInterval) clearInterval(syncInterval); syncInterval = setInterval(() => socket.emit('request-sync'), 10000); }
+    function startUltraSync() { if(syncInterval) clearInterval(syncInterval); syncInterval = setInterval(() => socket.emit('request-sync'), 50); }
     function skip(seconds) { video.currentTime += seconds; if(isHost) socket.emit('sync-video', { type: 'seek', time: video.currentTime }); }
 
     socket.on('sync-video', (data) => {
