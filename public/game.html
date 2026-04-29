@@ -14,15 +14,40 @@
     .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--primary); }
     
     .ttt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 300px; height: 300px; }
-    .ttt-cell { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron'; font-size: 4rem; cursor: pointer; transition: all 0.2s; }
+    .ttt-cell { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: 'Orbitron'; font-size: 4rem; cursor: pointer; transition: all 0.2s; width: 100%; height: 100%; box-sizing: border-box; }
     .ttt-cell:hover { background: rgba(255,255,255,0.1); }
     .ttt-cell.p1 { color: var(--primary); text-shadow: 0 0 20px var(--primary); }
     .ttt-cell.p2 { color: var(--secondary); text-shadow: 0 0 20px var(--secondary); }
     .ttt-cell.disabled { pointer-events: none; opacity: 0.5; }
+    .ttt-cell.win-cell { background: rgba(0,243,255,0.15); border-color: var(--primary); }
+    .ttt-cell.win-cell.p2 { background: rgba(188,19,254,0.15); border-color: var(--secondary); }
     
     /* Added missing color classes for the header */
     .p1-color { color: var(--primary); text-shadow: 0 0 10px var(--primary); }
     .p2-color { color: var(--secondary); text-shadow: 0 0 10px var(--secondary); }
+
+    /* Scoreboard Styles */
+    .scoreboard { display: flex; align-items: center; gap: 16px; }
+    .score-box { text-align: center; min-width: 70px; }
+    .score-box .score-value { font-family: 'Orbitron'; font-size: 2rem; font-weight: 900; line-height: 1; }
+    .score-box .score-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; opacity: 0.6; }
+    .score-divider { font-size: 1.5rem; opacity: 0.3; }
+
+    /* Result overlay */
+    .result-banner { animation: resultPop 0.4s ease-out; }
+    @keyframes resultPop {
+      0% { transform: scale(0.5); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    /* Restart button */
+    .restart-btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 8px 20px; border-radius: 8px; cursor: pointer; transition: all 0.3s; font-size: 14px; }
+    .restart-btn:hover { background: var(--primary); color: black; border-color: var(--primary); }
+    .restart-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .restart-btn:disabled:hover { background: rgba(255,255,255,0.1); color: white; border-color: rgba(255,255,255,0.2); }
+
+    /* Auto-restart countdown */
+    .countdown { font-family: 'Orbitron'; font-size: 0.85rem; opacity: 0.7; }
 
     /* Back Button Styles */
     #backBtn { position: fixed; top: 20px; left: 20px; z-index: 100; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); padding: 8px 12px; border-radius: 8px; display: flex; align-items: center; gap: 5px; text-decoration: none; color: white; font-size: 14px; transition: all 0.3s; }
@@ -58,6 +83,13 @@
     let partyCode = localStorage.getItem('partyCode');
     let currentGame = null;
 
+    // Score tracking
+    let scores = { myWins: 0, oppWins: 0, draws: 0 };
+    let autoRestartTimer = null;
+    let countdownInterval = null;
+    let countdownValue = 5;
+    let restartRequested = false;
+
     window.onload = () => {
       if(!partyCode) {
         document.getElementById('noCodeScreen').classList.remove('hidden');
@@ -89,6 +121,7 @@
 
     socket.on('game-start', (game) => {
       currentGame = game;
+      clearTimers();
       renderGame();
     });
 
@@ -96,6 +129,19 @@
       currentGame.board = data.board;
       currentGame.turn = data.turn;
       currentGame.players = data.players;
+
+      // Update scores if there's a result
+      if (data.result) {
+        const me = currentGame.players.find(p => p.id === socket.id);
+        if (data.result.draw) {
+          scores.draws++;
+        } else if (data.result.winner === me.symbol) {
+          scores.myWins++;
+        } else {
+          scores.oppWins++;
+        }
+      }
+
       renderGame(data.result);
     });
 
@@ -104,36 +150,139 @@
       window.location.href = '/';
     });
 
+    // Clear auto-restart timers
+    function clearTimers() {
+      if (autoRestartTimer) { clearTimeout(autoRestartTimer); autoRestartTimer = null; }
+      if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+      restartRequested = false;
+    }
+
+    // Start auto-restart countdown
+    function startAutoRestart() {
+      clearTimers();
+      countdownValue = 5;
+      restartRequested = false;
+
+      countdownInterval = setInterval(() => {
+        countdownValue--;
+        const el = document.getElementById('countdownText');
+        if (el) el.textContent = `Auto-restart in ${countdownValue}s`;
+        if (countdownValue <= 0) {
+          clearInterval(countdownInterval);
+          countdownInterval = null;
+        }
+      }, 1000);
+
+      autoRestartTimer = setTimeout(() => {
+        autoRestartTimer = null;
+        requestRestart();
+      }, 5000);
+    }
+
+    // Request restart (sends to server)
+    function requestRestart() {
+      if (restartRequested) return;
+      restartRequested = true;
+      socket.emit('request-restart', { roomId: partyCode });
+      const btn = document.getElementById('restartBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Waiting...'; }
+    }
+
     // Render the Tic Tac Toe Board
     function renderGame(result = null) {
       const me = currentGame.players.find(p => p.id === socket.id);
       const opp = currentGame.players.find(p => p.id !== socket.id);
       const isMyTurn = currentGame.turn === me.symbol;
 
+      // Determine winning cells
+      let winCells = [];
+      if (result && result.winner && result.line) {
+        winCells = result.line;
+      }
+
+      // Result text
+      let resultText = '';
+      let resultClass = '';
+      if (result) {
+        if (result.draw) {
+          resultText = "It's a Draw!";
+          resultClass = 'text-yellow-400';
+        } else if (result.winner === me.symbol) {
+          resultText = 'You Win!';
+          resultClass = 'p1-color';
+        } else {
+          resultText = 'You Lose!';
+          resultClass = 'p2-color';
+        }
+      }
+
       let html = `
-        <div class="glass p-4 rounded-xl mb-6 flex justify-between w-full max-w-md">
+        <div class="glass p-4 rounded-xl mb-4 flex justify-between items-center w-full max-w-md">
             <div class="text-center ${me.symbol === 'X' ? 'p1-color' : 'p2-color'}">
-                <div class="font-bold">${me.name} (You)</div>
+                <div class="font-bold text-sm">${me.name} (You)</div>
+                <div class="text-xs opacity-60">${me.symbol}</div>
             </div>
-            <div class="text-2xl font-bold text-white">VS</div>
+            <div class="text-xl font-bold text-white">VS</div>
             <div class="text-center ${opp.symbol === 'X' ? 'p1-color' : 'p2-color'}">
-                <div class="font-bold">${opp.name}</div>
+                <div class="font-bold text-sm">${opp.name}</div>
+                <div class="text-xs opacity-60">${opp.symbol}</div>
             </div>
         </div>
-        <h3 class="text-xl font-bold mb-4 ${isMyTurn ? 'text-green-400' : 'text-gray-400'}">
-            ${result ? (result.draw ? 'Draw!' : (result.winner === me.symbol ? 'You Win!' : 'You Lose!')) : (isMyTurn ? 'Your Turn' : 'Opponent Turn')}
+
+        <!-- Scoreboard -->
+        <div class="glass p-3 rounded-xl mb-4 w-full max-w-md">
+          <div class="scoreboard justify-center">
+            <div class="score-box">
+              <div class="score-value p1-color">${scores.myWins}</div>
+              <div class="score-label">You</div>
+            </div>
+            <div class="score-divider">|</div>
+            <div class="score-box">
+              <div class="score-value text-yellow-400">${scores.draws}</div>
+              <div class="score-label">Draw</div>
+            </div>
+            <div class="score-divider">|</div>
+            <div class="score-box">
+              <div class="score-value p2-color">${scores.oppWins}</div>
+              <div class="score-label">Opp</div>
+            </div>
+          </div>
+        </div>
+
+        <h3 class="text-xl font-bold mb-3 ${result ? resultClass : (isMyTurn ? 'text-green-400' : 'text-gray-400')}">
+            ${result ? `<span class="result-banner inline-block">${resultText}</span>` : (isMyTurn ? 'Your Turn' : 'Opponent Turn')}
         </h3>
         <div class="ttt-grid">
       `;
 
       currentGame.board.forEach((cell, i) => {
-        html += `<div class="ttt-cell ${cell === 'X' ? 'p1' : (cell === 'O' ? 'p2' : '')} ${!isMyTurn || cell ? 'disabled' : ''}" onclick="move(${i})">${cell || ''}</div>`;
+        const isWinCell = winCells.includes(i);
+        const cellClass = `ttt-cell ${cell === 'X' ? 'p1' : (cell === 'O' ? 'p2' : '')} ${!isMyTurn || cell || result ? 'disabled' : ''} ${isWinCell ? 'win-cell' : ''}`;
+        html += `<div class="${cellClass}" onclick="move(${i})">${cell || ''}</div>`;
       });
 
       html += `</div>`;
+
+      // Restart button & auto-restart countdown (only show after result)
+      if (result) {
+        html += `
+          <div class="mt-4 flex flex-col items-center gap-2">
+            <button id="restartBtn" class="restart-btn" onclick="requestRestart()">
+              ${restartRequested ? 'Waiting for Opponent...' : 'Play Again'}
+            </button>
+            <div id="countdownText" class="countdown">Auto-restart in ${countdownValue}s</div>
+          </div>
+        `;
+      }
+
       document.getElementById('gameArea').innerHTML = html;
       document.getElementById('gameArea').classList.remove('hidden');
       document.getElementById('waitingScreen').classList.add('hidden');
+
+      // Start auto-restart timer if game ended
+      if (result && !autoRestartTimer) {
+        startAutoRestart();
+      }
     }
 
     function move(index) {
