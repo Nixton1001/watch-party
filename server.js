@@ -143,7 +143,7 @@ io.on('connection', (socket) => {
   // ==========================================
   socket.on('join-game-room', (data) => {
     const { roomId, name } = data;
-    if (!gameRooms[roomId]) gameRooms[roomId] = { players: [], board: Array(9).fill(null), turn: 'X' };
+    if (!gameRooms[roomId]) gameRooms[roomId] = { players: [], board: Array(9).fill(null), turn: 'X', finished: false, restartRequests: new Set() };
     const game = gameRooms[roomId];
     if (game.players.length >= 2) return socket.emit('game-error', 'Game Room Full');
     const symbol = game.players.length === 0 ? 'X' : 'O';
@@ -155,22 +155,47 @@ io.on('connection', (socket) => {
 
   socket.on('play-move', (data) => {
     const game = gameRooms[socket.gameRoomId]; if (!game) return;
+    if (game.finished) return; // Don't allow moves after game ended
     const player = game.players.find(p => p.id === socket.id);
     if (!player || game.turn !== player.symbol || game.board[data.index]) return;
     game.board[data.index] = player.symbol;
     const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
     let winner = null;
-    for(let w of wins) { const [a,b,c] = w; if(game.board[a] && game.board[a] === game.board[b] && game.board[a] === game.board[c]) { winner = game.board[a]; break; } }
+    let winLine = null;
+    for(let w of wins) { const [a,b,c] = w; if(game.board[a] && game.board[a] === game.board[b] && game.board[a] === game.board[c]) { winner = game.board[a]; winLine = w; break; } }
     if (winner) {
       const winnerPlayer = game.players.find(p => p.symbol === winner); if(winnerPlayer) winnerPlayer.score += 50;
-      io.to(socket.gameRoomId).emit('game-update', { board: game.board, turn: game.turn, result: { winner }, players: game.players });
-      game.board = Array(9).fill(null);
+      game.finished = true; // Mark game as finished, don't reset board yet
+      game.restartRequests.clear();
+      io.to(socket.gameRoomId).emit('game-update', { board: game.board, turn: game.turn, result: { winner, line: winLine }, players: game.players });
     } else if (!game.board.includes(null)) {
+      game.finished = true; // Mark game as finished, don't reset board yet
+      game.restartRequests.clear();
       io.to(socket.gameRoomId).emit('game-update', { board: game.board, turn: game.turn, result: { draw: true }, players: game.players });
-      game.board = Array(9).fill(null);
     } else {
       game.turn = game.turn === 'X' ? 'O' : 'X';
       io.to(socket.gameRoomId).emit('game-update', { board: game.board, turn: game.turn, players: game.players });
+    }
+  });
+
+  // --- TIC TAC TOE: RESTART ---
+  socket.on('request-restart', ({ roomId }) => {
+    const game = gameRooms[roomId];
+    if (!game || !game.finished) return;
+
+    // Track who requested restart
+    game.restartRequests.add(socket.id);
+
+    // Notify the other player that restart was requested
+    socket.to(roomId).emit('restart-requested');
+
+    // Only restart when BOTH players agree
+    if (game.restartRequests.size === 2) {
+      game.board = Array(9).fill(null);
+      game.turn = 'X';
+      game.finished = false;
+      game.restartRequests.clear();
+      io.to(roomId).emit('game-start', game);
     }
   });
 
