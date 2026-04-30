@@ -9,24 +9,22 @@ const fs = require('fs');
 // --- SETUP ---
 app.use(express.static('public'));
 
-// Ensure uploads directory exists
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
-// Multer for Video Uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'uploads/'),
   filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
-const upload = multer({ storage, limits: { fileSize: 1000000000 } }); // 1GB Limit
+const upload = multer({ storage, limits: { fileSize: 1000000000 } });
 
 // --- DATA STORAGE ---
 const parties = {}; 
 const gameRooms = {}; 
 const drawRooms = {}; 
 const voiceRooms = {}; 
-const ludoRooms = {}; 
+const ludoRooms = {};
+const disconnectTimeouts = {}; // Store timeouts for grace period
 
-// Word List
 const wordList = ["Apple", "Banana", "Car", "Dog", "Elephant", "Fire", "Guitar", "House", "Ice", "Jelly", "Kite", "Lion", "Moon", "Night", "Orange", "Pizza", "Queen", "Rocket", "Sun", "Tree", "Umbrella", "Violin", "Water", "Xylophone", "Yellow", "Zebra", "Book", "Chair", "Door", "Fish", "Ghost", "Heart", "Juice", "King", "Lamp", "Mouse", "Nose", "Ocean", "Pencil", "Smile", "Tiger", "Cloud", "Box", "Cat", "Drum", "Hat", "Jar", "Key", "Leaf"];
 
 // --- ROUTES ---
@@ -36,48 +34,29 @@ app.get('/game.html', (req, res) => res.sendFile(__dirname + '/public/game.html'
 app.get('/draw.html', (req, res) => res.sendFile(__dirname + '/public/draw.html'));
 app.get('/ludo.html', (req, res) => res.sendFile(__dirname + '/public/ludo.html'));
 
-// Video Upload Endpoint
 app.post('/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({ filePath: `/uploads/${req.file.filename}` });
 });
 
-// --- VIDEO STREAMING ROUTE (Fixes Buffering/Stuttering) ---
+// --- VIDEO STREAMING ROUTE ---
 app.get('/uploads/:filename', (req, res) => {
   const filePath = path.join(__dirname, 'uploads', req.params.filename);
-  
-  // Check if file exists
   if (!fs.existsSync(filePath)) return res.status(404).send('File not found');
-
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
   const range = req.headers.range;
-
   if (range) {
-    // Parse Range header (e.g., "bytes=32324-")
     const parts = range.replace(/bytes=/, "").split("-");
     const start = parseInt(parts[0], 10);
     const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-    // Calculate chunk size (roughly 1MB chunks for smooth streaming)
     const chunksize = (end - start) + 1;
     const file = fs.createReadStream(filePath, { start, end });
-    
-    const head = {
-      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-      'Accept-Ranges': 'bytes',
-      'Content-Length': chunksize,
-      'Content-Type': 'video/mp4',
-    };
-
+    const head = { 'Content-Range': `bytes ${start}-${end}/${fileSize}`, 'Accept-Ranges': 'bytes', 'Content-Length': chunksize, 'Content-Type': 'video/mp4' };
     res.writeHead(206, head);
     file.pipe(res);
   } else {
-    // If no range is requested, send the whole file (fallback)
-    const head = {
-      'Content-Length': fileSize,
-      'Content-Type': 'video/mp4',
-    };
+    const head = { 'Content-Length': fileSize, 'Content-Type': 'video/mp4' };
     res.writeHead(200, head);
     fs.createReadStream(filePath).pipe(res);
   }
@@ -87,7 +66,7 @@ app.get('/uploads/:filename', (req, res) => {
 io.on('connection', (socket) => {
 
   // ==========================================
-  // --- PARTY SYSTEM ---
+  // --- PARTY SYSTEM (With Grace Period) ---
   // ==========================================
   
   socket.on('create-party', (data) => {
@@ -111,22 +90,23 @@ io.on('connection', (socket) => {
     const party = parties[data.roomId];
     if (!party) return socket.emit('error', 'Party not found');
     
+    // CLEAR DISCONNECT TIMEOUT IF RECONNECTING
+    if (disconnectTimeouts[data.roomId]) {
+        clearTimeout(disconnectTimeouts[data.roomId]);
+        delete disconnectTimeouts[data.roomId];
+    }
+
     const isReconnectingHost = party.hostUID === data.uid;
     if (isReconnectingHost) party.hostSocketId = socket.id;
+    
     if (!party.users.includes(socket.id)) party.users.push(socket.id);
-    party.names = party.names || {};
     party.names[socket.id] = data.name || 'Guest';
     
     socket.join(data.roomId);
     socket.partyCode = data.roomId;
     socket.userName = data.name || 'Guest';
     
-    // Notify other users in party that someone joined
-    socket.to(data.roomId).emit('user-joined-msg', { 
-      id: socket.id, 
-      name: data.name || 'Guest',
-      isHost: isReconnectingHost 
-    });
+    socket.to(data.roomId).emit('user-joined-msg', { id: socket.id, name: data.name || 'Guest', isHost: isReconnectingHost });
     
     socket.emit('party-joined', { 
       roomId: data.roomId, 
@@ -152,17 +132,19 @@ io.on('connection', (socket) => {
   socket.on('send-state', (data) => { io.to(data.to).emit('sync-video', { type: data.playing ? 'play' : 'pause', time: data.time }); });
 
   // ==========================================
-  // --- VOICE SYSTEM (Improved) ---
+  // --- VOICE SYSTEM ---
   // ==========================================
   socket.on('join-voice', (data) => {
     if (!voiceRooms[data.roomId]) voiceRooms[data.roomId] = [];
     const existing = voiceRooms[data.roomId].find(u => u.id === socket.id);
-    if (!existing) {
-      voiceRooms[data.roomId].push({ id: socket.id, name: data.name });
-    }
-    socket.to(data.roomId).emit('voice-user-joined', { id: socket.id, name: data.name });
+    if (!existing) voiceRooms[data.roomId].push({ id: socket.id, name: data.name });
+    
+    // Send list to requester
     const existingUsers = voiceRooms[data.roomId].filter(u => u.id !== socket.id);
     socket.emit('voice-users-list', existingUsers);
+    
+    // Notify others
+    socket.to(data.roomId).emit('voice-user-joined', { id: socket.id, name: data.name });
   });
 
   socket.on('voice-signal', (data) => { 
@@ -185,8 +167,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('play-move', (data) => {
-    const game = gameRooms[socket.gameRoomId]; if (!game) return;
-    if (game.finished) return; // Don't allow moves after game ended
+    const game = gameRooms[socket.gameRoomId]; if (!game || game.finished) return;
     const player = game.players.find(p => p.id === socket.id);
     if (!player || game.turn !== player.symbol || game.board[data.index]) return;
     game.board[data.index] = player.symbol;
@@ -196,11 +177,11 @@ io.on('connection', (socket) => {
     for(let w of wins) { const [a,b,c] = w; if(game.board[a] && game.board[a] === game.board[b] && game.board[a] === game.board[c]) { winner = game.board[a]; winLine = w; break; } }
     if (winner) {
       const winnerPlayer = game.players.find(p => p.symbol === winner); if(winnerPlayer) winnerPlayer.score += 50;
-      game.finished = true; // Mark game as finished, don't reset board yet
+      game.finished = true;
       game.restartRequests.clear();
       io.to(socket.gameRoomId).emit('game-update', { board: game.board, turn: game.turn, result: { winner, line: winLine }, players: game.players });
     } else if (!game.board.includes(null)) {
-      game.finished = true; // Mark game as finished, don't reset board yet
+      game.finished = true;
       game.restartRequests.clear();
       io.to(socket.gameRoomId).emit('game-update', { board: game.board, turn: game.turn, result: { draw: true }, players: game.players });
     } else {
@@ -209,18 +190,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  // --- TIC TAC TOE: RESTART ---
   socket.on('request-restart', ({ roomId }) => {
     const game = gameRooms[roomId];
     if (!game || !game.finished) return;
-
-    // Track who requested restart
     game.restartRequests.add(socket.id);
-
-    // Notify the other player that restart was requested
     socket.to(roomId).emit('restart-requested');
-
-    // Only restart when BOTH players agree
     if (game.restartRequests.size === 2) {
       game.board = Array(9).fill(null);
       game.turn = 'X';
@@ -286,31 +260,24 @@ io.on('connection', (socket) => {
   });
 
   // ==========================================
-  // --- GAME: LUDO (Fixed Logic) ---
+  // --- GAME: LUDO ---
   // ==========================================
   const ludoColors = ['red', 'green', 'yellow', 'blue'];
 
   socket.on('join-ludo', (data) => {
     const { roomId, name, uid } = data;
     if (!ludoRooms[roomId]) {
-      ludoRooms[roomId] = {
-        players: { red: null, green: null, yellow: null, blue: null },
-        pieces: {}, turn: 'red', active: false
-      };
+      ludoRooms[roomId] = { players: { red: null, green: null, yellow: null, blue: null }, pieces: {}, turn: 'red', active: false };
       ludoColors.forEach(c => { for(let i=0; i<4; i++) ludoRooms[roomId].pieces[`${c}-${i}`] = { color: c, pos: 'home' }; });
     }
     const room = ludoRooms[roomId];
     let assignedColor = null;
-    // Check reconnection
     for (let color of ludoColors) { if (room.players[color] && room.players[color].uid === uid) { room.players[color].id = socket.id; assignedColor = color; break; } }
-    // New join
     if (!assignedColor) { for (let color of ludoColors) { if (room.players[color] === null) { room.players[color] = { id: socket.id, name, uid }; assignedColor = color; break; } } }
     if (!assignedColor) return socket.emit('ludo-error', 'Game Full');
 
     socket.join(roomId); socket.ludoRoom = roomId;
     const playerCount = Object.values(room.players).filter(p => p !== null).length;
-    
-    // Start with 2+ players
     if(playerCount >= 2) {
         if(!room.active) { const firstAvailable = ludoColors.find(c => room.players[c]); room.turn = firstAvailable; }
         room.active = true;
@@ -323,7 +290,7 @@ io.on('connection', (socket) => {
   socket.on('ludo-roll', (data) => {
     const room = ludoRooms[socket.ludoRoom]; if (!room || !room.active) return;
     const player = room.players[room.turn]; if (!player || player.id !== socket.id) return;
-    room.dice = data.result; // Save dice to state
+    room.dice = data.result;
     io.to(socket.ludoRoom).emit('ludo-update', room);
   });
 
@@ -331,15 +298,10 @@ io.on('connection', (socket) => {
     const room = ludoRooms[socket.ludoRoom]; if (!room) return;
     const piece = room.pieces[data.tokenId]; if (!piece || piece.color !== room.turn) return;
     const dice = room.dice; 
-    
-    // Move Logic
     if (piece.pos === 'home' && dice === 6) piece.pos = 0;
     else if (piece.pos !== 'home') { piece.pos += dice; if (piece.pos > 57) piece.pos = 'finished'; }
-
-    // Turn Logic
     if (dice !== 6) {
         const currentIndex = ludoColors.indexOf(room.turn);
-        // Loop to find next available player (Skip empty)
         for(let i=1; i<=4; i++) {
             const nextIndex = (currentIndex + i) % 4;
             const nextColor = ludoColors[nextIndex];
@@ -358,38 +320,43 @@ io.on('connection', (socket) => {
      }
   });
 
-  // --- DISCONNECT ---
+  // --- DISCONNECT (With Grace Period) ---
   socket.on('disconnect', () => {
-    if (socket.partyCode && parties[socket.partyCode]) {
-      const party = parties[socket.partyCode]; 
-      const leavingName = party.names && party.names[socket.id] || 'Someone';
-      party.users = party.users.filter(id => id !== socket.id);
-      if (party.hostSocketId === socket.id) party.hostSocketId = null;
-      delete party.names[socket.id];
-      
-      // Notify others
-      socket.to(socket.partyCode).emit('user-left-msg', { id: socket.id, name: leavingName });
-      socket.to(socket.partyCode).emit('user-disconnected', { id: socket.id });
-      
-      // Clean up empty parties
-      if (party.users.length === 0) {
-        delete parties[socket.partyCode];
-      }
-    }
-    
+    // Clear voice presence immediately
     for (let roomId in voiceRooms) {
       const len = voiceRooms[roomId].length; 
-      const leavingUser = voiceRooms[roomId].find(u => u.id === socket.id);
       voiceRooms[roomId] = voiceRooms[roomId].filter(u => u.id !== socket.id);
-      if (voiceRooms[roomId].length < len) {
-        socket.to(roomId).emit('voice-user-left', { id: socket.id });
-      }
-      // Clean up empty voice rooms
+      if (voiceRooms[roomId].length < len) socket.to(roomId).emit('voice-user-left', { id: socket.id });
       if (voiceRooms[roomId].length === 0) delete voiceRooms[roomId];
+    }
+
+    if (socket.partyCode && parties[socket.partyCode]) {
+      const party = parties[socket.partyCode];
+      const leavingName = party.names && party.names[socket.id] || 'Someone';
+      
+      // Notify others immediately
+      socket.to(socket.partyCode).emit('user-left-msg', { id: socket.id, name: leavingName });
+      socket.to(socket.partyCode).emit('user-disconnected', { id: socket.id });
+
+      // Set a timeout to clean up room (10 seconds grace period)
+      // This allows the user to refresh without destroying the room immediately
+      disconnectTimeouts[socket.partyCode] = setTimeout(() => {
+        // Re-check if room still exists and if user really left
+        // (User might have reconnected in another tab/socket)
+        if (parties[socket.partyCode]) {
+             const p = parties[socket.partyCode];
+             p.users = p.users.filter(id => id !== socket.id);
+             delete p.names[socket.id];
+             if (p.hostSocketId === socket.id) p.hostSocketId = null;
+             
+             if (p.users.length === 0) {
+                delete parties[socket.partyCode];
+             }
+        }
+      }, 10000); // 10 seconds
     }
     
     if (socket.gameRoomId && gameRooms[socket.gameRoomId]) { delete gameRooms[socket.gameRoomId]; io.to(socket.gameRoomId).emit('game-error', 'Opponent Disconnected'); }
-    
     if (socket.drawRoomId && drawRooms[socket.drawRoomId]) {
         const room = drawRooms[socket.drawRoomId]; room.players = room.players.filter(p => p.id !== socket.id);
         if (room.drawer && room.drawer.id === socket.id) {
@@ -400,7 +367,6 @@ io.on('connection', (socket) => {
              if (room.players.length < 2) { if(room.timer) clearInterval(room.timer); io.to(socket.drawRoomId).emit('draw-waiting', { players: room.players, message: 'Waiting for players...' }); room.status = 'waiting'; }
         }
     }
-    
     if (socket.ludoRoom && ludoRooms[socket.ludoRoom]) {
         const room = ludoRooms[socket.ludoRoom];
         for(let color of ludoColors) { if(room.players[color] && room.players[color].id === socket.id) room.players[color] = null; }
@@ -410,6 +376,5 @@ io.on('connection', (socket) => {
 
 });
 
-// --- START SERVER ---
 const PORT = process.env.PORT || 3000;
 http.listen(PORT, () => console.log(`Watch-Night Server running on port ${PORT}`));
