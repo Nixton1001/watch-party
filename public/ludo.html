@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Watch-Night | Ludo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --primary:#00f3ff; --secondary:#bc13fe; --bg:#050505; --red:#ff4757; --green:#2ed573; --yellow:#ffa502; --blue:#1e90ff; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Rajdhani',sans-serif;background:var(--bg);color:#fff;overflow-x:hidden;min-height:100vh}
+
+    .glass{background:rgba(10,10,10,.75);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.08)}
+    .neon-btn{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#000;font-weight:700;font-family:'Rajdhani',sans-serif;letter-spacing:.5px;transition:all .25s;cursor:pointer;border:none}
+    .neon-btn:hover{filter:brightness(1.15);box-shadow:0 0 24px rgba(0,243,255,.35)}
+    .neon-btn:disabled{opacity:.4;cursor:not-allowed;filter:grayscale(1);box-shadow:none}
+
+    /* ── Board ── */
+    #ludo-board{display:grid;grid-template-columns:repeat(15,1fr);grid-template-rows:repeat(15,1fr);width:min(88vw,540px);height:min(88vw,540px);border:3px solid rgba(255,255,255,.25);border-radius:8px;overflow:hidden;box-shadow:0 0 40px rgba(0,243,255,.1),inset 0 0 60px rgba(0,0,0,.5);position:relative}
+    .cell{position:relative;display:flex;align-items:center;justify-content:center;border:.5px solid rgba(0,0,0,.3);transition:background .2s}
+
+    /* Home zones */
+    .zone-red{background:linear-gradient(135deg,rgba(255,71,87,.28),rgba(255,71,87,.14))}
+    .zone-green{background:linear-gradient(135deg,rgba(46,213,115,.28),rgba(46,213,115,.14))}
+    .zone-yellow{background:linear-gradient(135deg,rgba(255,165,2,.28),rgba(255,165,2,.14))}
+    .zone-blue{background:linear-gradient(135deg,rgba(30,144,255,.28),rgba(30,144,255,.14))}
+    .home-inner{background:rgba(255,255,255,.08)!important;border:1px solid rgba(255,255,255,.06)!important}
+    .home-spot{width:70%;height:70%;border-radius:50%;background:rgba(255,255,255,.06);border:1.5px dashed rgba(255,255,255,.15)}
+
+    /* Path */
+    .path-cell{background:rgba(235,235,235,.88)}
+
+    /* Start cells */
+    .start-red{background:rgba(255,71,87,.6)!important}
+    .start-green{background:rgba(46,213,115,.6)!important}
+    .start-yellow{background:rgba(255,165,2,.6)!important}
+    .start-blue{background:rgba(30,144,255,.6)!important}
+    .start-red::after,.start-green::after,.start-yellow::after,.start-blue::after{content:'▶';font-size:.55rem;opacity:.5;position:absolute}
+    .start-red::after{color:#fff}
+    .start-green::after{color:#fff;transform:rotate(90deg)}
+    .start-yellow::after{color:#fff;transform:rotate(180deg)}
+    .start-blue::after{color:#fff;transform:rotate(270deg)}
+
+    /* Safe stars */
+    .safe-cell{background:rgba(210,210,210,.7)!important}
+    .safe-cell::after{content:'★';position:absolute;font-size:.75rem;color:rgba(0,0,0,.22);pointer-events:none}
+
+    /* Home stretches */
+    .hs-red{background:rgba(255,71,87,.32)!important}
+    .hs-green{background:rgba(46,213,115,.32)!important}
+    .hs-yellow{background:rgba(255,165,2,.32)!important}
+    .hs-blue{background:rgba(30,144,255,.32)!important}
+
+    /* Center */
+    .center-cell{background:conic-gradient(from 45deg,var(--red),var(--green),var(--yellow),var(--blue),var(--red));opacity:.65}
+
+    /* ── Tokens ── */
+    .token{width:72%;height:72%;border-radius:50%;border:2.5px solid rgba(255,255,255,.9);position:absolute;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.45);transition:transform .12s,box-shadow .12s;cursor:default}
+    .token-red{background:radial-gradient(circle at 35% 35%,#ff6b7a,var(--red))}
+    .token-green{background:radial-gradient(circle at 35% 35%,#5ae89c,var(--green))}
+    .token-yellow{background:radial-gradient(circle at 35% 35%,#ffba33,var(--yellow))}
+    .token-blue{background:radial-gradient(circle at 35% 35%,#4da8ff,var(--blue))}
+    .token.highlight{animation:tpulse .8s ease-in-out infinite;cursor:pointer;z-index:20;box-shadow:0 0 12px var(--primary),0 0 24px rgba(0,243,255,.3);border-color:var(--primary)}
+    @keyframes tpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+    .token.stack-0{top:12%;left:12%}
+    .token.stack-1{top:12%;left:48%}
+    .token.stack-2{top:48%;left:12%}
+    .token.stack-3{top:48%;left:48%}
+
+    /* ── Dice ── */
+    .dice-box{width:64px;height:64px;background:#fff;border-radius:12px;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:8px;gap:2px;cursor:pointer;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+    .dice-box:hover:not(.disabled){transform:scale(1.05);box-shadow:0 4px 20px rgba(0,243,255,.3)}
+    .dice-box.disabled{opacity:.35;cursor:not-allowed}
+    .dice-box.rolling{animation:droll .6s ease-out}
+    @keyframes droll{0%{transform:rotateX(0) rotateZ(0) scale(1)}25%{transform:rotateX(180deg) rotateZ(90deg) scale(.9)}50%{transform:rotateX(360deg) rotateZ(180deg) scale(1.1)}75%{transform:rotateX(540deg) rotateZ(270deg) scale(.95)}100%{transform:rotateX(720deg) rotateZ(360deg) scale(1)}}
+    .dot{width:100%;height:100%;border-radius:50%;background:transparent;transition:background .1s}
+    .dot.on{background:#1a1a1a}
+
+    /* ── Overlays ── */
+    #waitingScreen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:50}
+    #winner-overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;animation:fadeUp .5s}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+    #backBtn{position:fixed;top:16px;left:16px;z-index:100;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.15);padding:6px 14px;border-radius:8px;display:flex;align-items:center;gap:6px;text-decoration:none;color:#ccc;font-size:13px;font-family:'Rajdhani',sans-serif;transition:all .25s}
+    #backBtn:hover{background:var(--primary);color:#000;border-color:var(--primary)}
+    .player-row{transition:all .3s}
+    .player-row.active-turn{box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)}
+
+    /* Toast */
+    @keyframes slideIn { from { opacity: 0; transform: translateX(100px); } to { opacity: 1; transform: translateX(0); } }
+    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; }
+    .toast-item { padding: 10px 18px; border-radius: 10px; font-size: 0.875rem; font-weight: 500; backdrop-filter: blur(10px); animation: slideIn 0.4s ease; border-left: 3px solid; }
+    .toast-success { background: rgba(0,0,0,0.8); color: #4ade80; border-color: #4ade80; }
+    .toast-info { background: rgba(0,0,0,0.8); color: #22d3ee; border-color: #22d3ee; }
+    .toast-error { background: rgba(0,0,0,0.8); color: #f87171; border-color: #f87171; }
+
+    /* Capture flash */
+    .capture-flash{animation:cflash .4s}
+    @keyframes cflash{0%{box-shadow:0 0 0 0 rgba(255,0,0,.6)}50%{box-shadow:0 0 20px 8px rgba(255,0,0,.4)}100%{box-shadow:0 0 0 0 transparent}}
+  </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen">
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <a href="/?skipSplash=1" id="backBtn">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+    Lobby
+  </a>
+
+  <div id="waitingScreen">
+    <div class="text-6xl mb-6 animate-bounce">&#127922;</div>
+    <h2 class="text-3xl font-bold mb-2" style="font-family:'Orbitron'">Waiting for Players</h2>
+    <p class="text-gray-500 text-lg">Need at least 2 to start</p>
+    <div class="flex gap-5 mt-8">
+      <div class="w-5 h-5 rounded-full bg-red-500 animate-pulse"></div>
+      <div class="w-5 h-5 rounded-full bg-green-500 animate-pulse" style="animation-delay:.15s"></div>
+      <div class="w-5 h-5 rounded-full bg-yellow-500 animate-pulse" style="animation-delay:.3s"></div>
+      <div class="w-5 h-5 rounded-full bg-blue-500 animate-pulse" style="animation-delay:.45s"></div>
+    </div>
+    <p id="playerCountText" class="text-sm text-gray-600 mt-5">Players: 1</p>
+  </div>
+
+  <div id="winner-overlay">
+    <div class="text-7xl mb-4">&#127942;</div>
+    <h1 class="text-5xl font-bold mb-3" style="font-family:'Orbitron'">WINNER</h1>
+    <p id="winner-name" class="text-3xl font-bold" style="color:var(--primary)">Player</p>
+    <button onclick="resetGame()" class="neon-btn mt-8 px-8 py-3 rounded-xl text-lg">Play Again</button>
+  </div>
+
+  <div class="flex flex-col md:flex-row items-center justify-center gap-6 p-4 hidden" id="gameContainer">
+    <div class="glass rounded-2xl p-5 flex flex-col items-center gap-3 w-full md:w-52 order-2 md:order-1">
+      <h3 style="font-family:'Orbitron'" class="text-lg tracking-wide">TURN <span id="turnIndicator" class="text-[var(--primary)]">—</span></h3>
+      <div id="dice" class="dice-box disabled" onclick="rollDice()">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      </div>
+      <p id="diceResult" class="text-xs text-gray-500 h-5 text-center"></p>
+      <div class="w-full space-y-2 mt-3">
+        <div id="p-red" class="player-row flex justify-between items-center px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 opacity-30">
+          <span class="text-sm font-bold">Red</span><span class="text-xs text-gray-400">0/4</span>
+        </div>
+        <div id="p-green" class="player-row flex justify-between items-center px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/30 opacity-30">
+          <span class="text-sm font-bold">Green</span><span class="text-xs text-gray-400">0/4</span>
+        </div>
+        <div id="p-yellow" class="player-row flex justify-between items-center px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 opacity-30">
+          <span class="text-sm font-bold">Yellow</span><span class="text-xs text-gray-400">0/4</span>
+        </div>
+        <div id="p-blue" class="player-row flex justify-between items-center px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30 opacity-30">
+          <span class="text-sm font-bold">Blue</span><span class="text-xs text-gray-400">0/4</span>
+        </div>
+      </div>
+    </div>
+    <div id="ludo-board" class="order-1 md:order-2"></div>
+  </div>
+
+  <script src="/voice-manager.js"></script>
+  <script>
+    const socket = io();
+    const partyCode = localStorage.getItem('partyCode');
+    const myName    = localStorage.getItem('watchNightName');
+    const myUid     = localStorage.getItem('watchNightUid');
+    if (!partyCode) window.location.href = '/';
+
+    /* ── Toast System ── */
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast-item toast-${type}`;
+      toast.innerHTML = `<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full ${type==='success'?'bg-green-400':type==='error'?'bg-red-400':'bg-cyan-400'}"></span>${message}</div>`;
+      container.appendChild(toast);
+      setTimeout(() => { toast.style.transition = 'all 0.4s ease'; toast.style.opacity = '0'; toast.style.transform = 'translateX(100px)'; setTimeout(() => toast.remove(), 400); }, 3000);
+    }
+
+    /* ── Complete 52-cell outer path (clockwise from Red's entry) ── */
+    const PATH = [
+      [6,1],[6,2],[6,3],[6,4],[6,5],
+      [5,6],[4,6],[3,6],[2,6],[1,6],[0,6],
+      [0,7],[0,8],
+      [1,8],[2,8],[3,8],[4,8],[5,8],
+      [6,9],[6,10],[6,11],[6,12],[6,13],[6,14],
+      [7,14],[8,14],
+      [8,13],[8,12],[8,11],[8,10],[8,9],
+      [9,8],[10,8],[11,8],[12,8],[13,8],[14,8],
+      [14,7],[14,6],
+      [13,6],[12,6],[11,6],[10,6],[9,6],
+      [8,5],[8,4],[8,3],[8,2],[8,1],[8,0],
+      [7,0],[6,0]
+    ];
+
+    const HOME_STRETCH = {
+      red:    [[7,1],[7,2],[7,3],[7,4],[7,5]],
+      green:  [[1,7],[2,7],[3,7],[4,7],[5,7]],
+      yellow: [[7,13],[7,12],[7,11],[7,10],[7,9]],
+      blue:   [[13,7],[12,7],[11,7],[10,7],[9,7]]
+    };
+
+    const ENTRY = { red: 0, green: 13, yellow: 26, blue: 39 };
+
+    const HOME_BASE = {
+      red:    [[2,2],[2,3],[3,2],[3,3]],
+      green:  [[2,11],[2,12],[3,11],[3,12]],
+      yellow: [[11,11],[11,12],[12,11],[12,12]],
+      blue:   [[11,2],[11,3],[12,2],[12,3]]
+    };
+
+    const SAFE_INDICES = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
+    const CENTER = [7,7];
+
+    let myColor = null;
+    let currentRoom = null;
+    let isRolling = false;
+
+    const ludoColors = ['red','green','yellow','blue'];
+
+    function renderBoard() {
+      const board = document.getElementById('ludo-board');
+      board.innerHTML = '';
+      for(let r=0;r<15;r++){
+        for(let c=0;c<15;c++){
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.dataset.r = r; cell.dataset.c = c;
+
+          // Home zones
+          if(r<6 && c<6) cell.classList.add('zone-red');
+          else if(r<6 && c>8) cell.classList.add('zone-green');
+          else if(r>8 && c>8) cell.classList.add('zone-yellow');
+          else if(r>8 && c<6) cell.classList.add('zone-blue');
+
+          // Center
+          if(r===7 && c===7){ cell.classList.add('center-cell'); continue; }
+
+          // Path cells
+          const pathIdx = PATH.findIndex(([pr,pc])=>pr===r && pc===c);
+          if(pathIdx !== -1){
+            cell.classList.add('path-cell');
+            if(SAFE_INDICES.has(pathIdx)) cell.classList.add('safe-cell');
+            if(pathIdx===ENTRY.red) cell.classList.add('start-red');
+            if(pathIdx===ENTRY.green) cell.classList.add('start-green');
+            if(pathIdx===ENTRY.yellow) cell.classList.add('start-yellow');
+            if(pathIdx===ENTRY.blue) cell.classList.add('start-blue');
+          }
+
+          // Home stretches
+          Object.entries(HOME_STRETCH).forEach(([color,coords])=>{
+            if(coords.some(([pr,pc])=>pr===r && pc===c)) cell.classList.add('hs-'+color);
+          });
+
+          // Home inner spots
+          Object.entries(HOME_BASE).forEach(([color,coords])=>{
+            if(coords.some(([pr,pc])=>pr===r && pc===c)){
+              cell.classList.add('home-inner');
+              const spot = document.createElement('div');
+              spot.className = 'home-spot';
+              cell.appendChild(spot);
+            }
+          });
+
+          board.appendChild(cell);
+        }
+      }
+    }
+    renderBoard();
+
+    function renderTokens(room){
+      document.querySelectorAll('.token').forEach(t=>t.remove());
+      const board = document.getElementById('ludo-board');
+      ludoColors.forEach(color=>{
+        for(let i=0;i<4;i++){
+          const piece = room.pieces[`${color}-${i}`];
+          if(!piece) continue;
+          const token = document.createElement('div');
+          token.className = `token token-${color}`;
+          token.dataset.token = `${color}-${i}`;
+          let r,c;
+          if(piece.pos==='home'){
+            const [hr,hc] = HOME_BASE[color][i];
+            r=hr; c=hc;
+            token.classList.add('stack-'+i);
+          } else if(piece.pos==='finished'){
+            const fs = HOME_STRETCH[color];
+            const [fr,fc] = fs[fs.length-1];
+            r=fr; c=fc;
+          } else {
+            const pathPos = (ENTRY[color] + piece.pos) % 52;
+            const [pr,pc] = PATH[pathPos];
+            r=pr; c=pc;
+          }
+          const cell = board.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+          if(cell){
+            cell.appendChild(token);
+            if(piece.pos!=='home') token.style.position='absolute';
+          }
+          // Highlight movable tokens
+          if(room.turn===color && room.dice && room.dice>0 && piece.pos!=='finished' && myColor===color){
+            if(piece.pos==='home' && room.dice===6) token.classList.add('highlight');
+            else if(piece.pos!=='home') token.classList.add('highlight');
+          }
+        }
+      });
+
+      // Add click handlers for highlighted tokens
+      document.querySelectorAll('.token.highlight').forEach(t=>{
+        t.onclick = (e)=>{ e.stopPropagation(); moveToken(t.dataset.token); };
+      });
+    }
+
+    function renderUI(room){
+      const activeColors = ludoColors.filter(c=>room.players[c]);
+      document.getElementById('turnIndicator').innerText = room.turn.toUpperCase();
+      document.getElementById('turnIndicator').style.color = `var(--${room.turn})`;
+
+      ludoColors.forEach(color=>{
+        const el = document.getElementById('p-'+color);
+        const player = room.players[color];
+        if(player){
+          el.style.opacity = '1';
+          el.classList.toggle('active-turn', room.turn===color);
+          const finished = Object.values(room.pieces).filter(p=>p.color===color && p.pos==='finished').length;
+          el.querySelector('span:last-child').innerText = `${finished}/4`;
+          el.querySelector('span:first-child').innerText = player.name;
+        } else {
+          el.style.opacity = '0.3';
+          el.classList.remove('active-turn');
+        }
+      });
+
+      // Dice UI
+      const dice = room.dice || 0;
+      renderDice(dice);
+      const isMyTurn = myColor === room.turn;
+      const diceEl = document.getElementById('dice');
+      diceEl.classList.toggle('disabled', !isMyTurn || isRolling || dice>0);
+    }
+
+    function renderDice(val){
+      const dots = document.querySelectorAll('.dice-box .dot');
+      const patterns = {
+        1:[4], 2:[0,8], 3:[0,4,8], 4:[0,2,6,8],
+        5:[0,2,4,6,8], 6:[0,2,3,5,6,8]
+      };
+      dots.forEach(d=>d.classList.remove('on'));
+      (patterns[val]||[]).forEach(i=>dots[i].classList.add('on'));
+    }
+
+    function rollDice(){
+      if(isRolling) return;
+      const diceEl = document.getElementById('dice');
+      if(diceEl.classList.contains('disabled')) return;
+      isRolling = true;
+      diceEl.classList.add('rolling');
+      let rollCount = 0;
+      const interval = setInterval(()=>{
+        renderDice(Math.floor(Math.random()*6)+1);
+        rollCount++;
+        if(rollCount>8){
+          clearInterval(interval);
+          const result = Math.floor(Math.random()*6)+1;
+          renderDice(result);
+          diceEl.classList.remove('rolling');
+          isRolling = false;
+          socket.emit('ludo-roll',{result});
+        }
+      },80);
+    }
+
+    function moveToken(tokenId){
+      socket.emit('ludo-move',{tokenId});
+    }
+
+    function resetGame(){
+      socket.emit('ludo-restart');
+    }
+
+    /* ── Socket Events ── */
+    socket.on('ludo-state',(room)=>{
+      currentRoom=room;
+      document.getElementById('waitingScreen').classList.add('hidden');
+      document.getElementById('gameContainer').classList.remove('hidden');
+      // Find my color
+      ludoColors.forEach(c=>{ if(room.players[c] && room.players[c].id===socket.id) myColor=c; });
+      renderTokens(room);
+      renderUI(room);
+    });
+
+    socket.on('ludo-update',(room)=>{
+      currentRoom=room;
+      renderTokens(room);
+      renderUI(room);
+    });
+
+    socket.on('ludo-waiting',(data)=>{
+      document.getElementById('playerCountText').innerText = `Players: ${data.count}`;
+    });
+
+    socket.on('ludo-error',(msg)=>{
+      showToast(msg,'error');
+    });
+
+    // Join/leave notifications
+    socket.on('user-joined-msg', (data) => showToast(`${data.name} joined`, 'success'));
+    socket.on('user-left-msg', (data) => showToast(`${data.name} left`, 'info'));
+
+    /* ── Init ── */
+    window.onload = () => {
+      initVoiceSystem(socket);
+      socket.emit('join-party',{roomId:partyCode,name:myName,uid:myUid});
+      socket.emit('join-ludo',{roomId:partyCode,name:myName,uid:myUid});
+    };
+
+    socket.on('party-joined',(d)=>startVoice(d.roomId,myName));
+  </script>
+</body>
+</html>

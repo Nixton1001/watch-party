@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Watch-Night | Hub</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --primary: #00f3ff; --secondary: #bc13fe; --bg: #050505; }
+    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow-x: hidden; }
+    
+    /* ── Particle Canvas ── */
+    #particles-canvas { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+    
+    /* ── Floating Gradient Orbs ── */
+    .orb { position: fixed; border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: 1; opacity: 0.35; }
+    .orb-1 { width: 400px; height: 400px; background: radial-gradient(circle, var(--primary), transparent 70%); top: -100px; left: -100px; animation: orbFloat1 15s ease-in-out infinite; }
+    .orb-2 { width: 500px; height: 500px; background: radial-gradient(circle, var(--secondary), transparent 70%); bottom: -150px; right: -150px; animation: orbFloat2 18s ease-in-out infinite; }
+    .orb-3 { width: 300px; height: 300px; background: radial-gradient(circle, #00ff88, transparent 70%); top: 50%; left: 50%; animation: orbFloat3 20s ease-in-out infinite; }
+    
+    @keyframes orbFloat1 { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(80px,60px) scale(1.1); } 66% { transform: translate(-40px,100px) scale(0.9); } }
+    @keyframes orbFloat2 { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(-100px,-60px) scale(1.15); } 66% { transform: translate(50px,-80px) scale(0.85); } }
+    @keyframes orbFloat3 { 0%,100% { transform: translate(-50%,-50%) scale(1); } 50% { transform: translate(-30%,-60%) scale(1.2); } }
+    
+    /* ── Glitch Text Effect ── */
+    .glitch-wrapper { position: relative; display: inline-block; }
+    .glitch-text {
+      font-family: 'Orbitron', sans-serif; font-weight: 900;
+      position: relative; animation: glitch-skew 3s infinite;
+    }
+    .glitch-text::before, .glitch-text::after {
+      content: attr(data-text);
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    }
+    .glitch-text::before {
+      left: 2px; text-shadow: -2px 0 #ff0040; clip: rect(44px, 450px, 56px, 0);
+      animation: glitch-anim1 4s infinite linear alternate-reverse;
+    }
+    .glitch-text::after {
+      left: -2px; text-shadow: -2px 0 #00f3ff; clip: rect(44px, 450px, 56px, 0);
+      animation: glitch-anim2 3s infinite linear alternate-reverse;
+    }
+    @keyframes glitch-anim1 {
+      0% { clip: rect(30px, 9999px, 10px, 0); }
+      20% { clip: rect(80px, 9999px, 5px, 0); }
+      40% { clip: rect(10px, 9999px, 90px, 0); }
+      60% { clip: rect(50px, 9999px, 20px, 0); }
+      80% { clip: rect(15px, 9999px, 70px, 0); }
+      100% { clip: rect(60px, 9999px, 40px, 0); }
+    }
+    @keyframes glitch-anim2 {
+      0% { clip: rect(65px, 9999px, 100px, 0); }
+      20% { clip: rect(20px, 9999px, 15px, 0); }
+      40% { clip: rect(90px, 9999px, 60px, 0); }
+      60% { clip: rect(5px, 9999px, 85px, 0); }
+      80% { clip: rect(45px, 9999px, 30px, 0); }
+      100% { clip: rect(75px, 9999px, 10px, 0); }
+    }
+    @keyframes glitch-skew {
+      0%,100% { transform: skew(0deg); } 
+      20% { transform: skew(-1deg); }
+      40% { transform: skew(1deg); }
+      60% { transform: skew(-0.5deg); }
+      80% { transform: skew(0.5deg); }
+    }
+    
+    /* ── Typing Cursor ── */
+    .typing-cursor::after { content: '|'; animation: blink 1s infinite; color: var(--primary); }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+    
+    /* ── Animations ── */
+    @keyframes fadeInUp { 0% { opacity: 0; transform: translateY(30px); } 100% { opacity: 1; transform: translateY(0); } }
+    @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
+    @keyframes pulse-glow { 0%,100% { box-shadow: 0 0 20px rgba(0,243,255,0.3); } 50% { box-shadow: 0 0 40px rgba(0,243,255,0.6), 0 0 60px rgba(188,19,254,0.3); } }
+    @keyframes border-glow { 0%,100% { border-color: rgba(0,243,255,0.3); } 50% { border-color: rgba(188,19,254,0.5); } }
+    @keyframes scanline {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(100vh); }
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(100px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    
+    .anim-fade-in-up { animation: fadeInUp 0.8s ease forwards; opacity: 0; }
+    
+    /* ── Glass & UI ── */
+    .glass { background: rgba(10, 10, 10, 0.6); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; }
+    .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 30px var(--primary); }
+    
+    /* ── Splash ── */
+    #splash-screen { position: fixed; inset: 0; z-index: 9999; background: radial-gradient(circle at center, #0a0a12 0%, #000000 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.6s ease; }
+    #splash-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    #splash-screen.css-fade { animation: splashFade 0.6s ease 3.2s forwards; }
+    @keyframes splashFade { from { opacity: 1; visibility: visible; } to { opacity: 0; visibility: hidden; pointer-events: none; } }
+    
+    /* ── Scanline Overlay ── */
+    .scanline-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
+    .scanline-overlay::before {
+      content: ''; position: absolute; width: 100%; height: 4px; background: rgba(0,243,255,0.04);
+      animation: scanline 6s linear infinite; left: 0;
+    }
+    
+    /* ── Code Display ── */
+    .code-container { position: relative; padding: 15px 30px; border-radius: 20px; background: linear-gradient(135deg, rgba(0, 243, 255, 0.1), rgba(188, 19, 254, 0.1)); border: 1px solid rgba(0, 243, 255, 0.3); animation: float 3s ease-in-out infinite, border-glow 3s ease-in-out infinite; }
+    .code-text { font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: clamp(1.5rem, 8vw, 4rem); background: linear-gradient(to bottom, #fff, #00f3ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: 6px; text-shadow: 0 0 20px rgba(0, 243, 255, 0.5); }
+    
+    /* ── Mode Cards ── */
+    .mode-card { transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); transform-style: preserve-3d; perspective: 1000px; position: relative; overflow: hidden; }
+    .mode-card:hover { transform: translateY(-10px) scale(1.02); border-color: var(--primary); box-shadow: 0 20px 40px rgba(0, 243, 255, 0.2); }
+    .mode-card .card-shine { position: absolute; inset: 0; background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.08) 45%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.08) 55%, transparent 60%); transform: translateX(-100%); transition: transform 0.6s; pointer-events: none; }
+    .mode-card:hover .card-shine { transform: translateX(100%); }
+    .mode-card .card-glow { position: absolute; inset: -1px; border-radius: inherit; opacity: 0; transition: opacity 0.3s; background: linear-gradient(135deg, var(--primary), var(--secondary)); z-index: -1; filter: blur(8px); }
+    .mode-card:hover .card-glow { opacity: 0.5; }
+    
+    /* ── Particle Icon ── */
+    .particle-icon { position: absolute; font-size: 1.2rem; opacity: 0; pointer-events: none; animation: particleFade 1.5s ease-out forwards; }
+    @keyframes particleFade { 0% { opacity: 1; transform: translate(0,0) scale(1); } 100% { opacity: 0; transform: translate(var(--px), var(--py)) scale(0.3); } }
+    
+    /* ── Live Indicator ── */
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #00ff88; box-shadow: 0 0 8px #00ff88; animation: livePulse 2s infinite; display: inline-block; margin-right: 8px; }
+    @keyframes livePulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.3); } }
+    
+    /* ── Toast ── */
+    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; }
+    .toast-item { padding: 10px 18px; border-radius: 10px; font-size: 0.875rem; font-weight: 500; backdrop-filter: blur(10px); animation: slideIn 0.4s ease; border-left: 3px solid; }
+    .toast-success { background: rgba(0,0,0,0.8); color: #4ade80; border-color: #4ade80; }
+    .toast-info { background: rgba(0,0,0,0.8); color: #22d3ee; border-color: #22d3ee; }
+    
+    /* ── Error Modal ── */
+    #errorModal { position: fixed; inset: 0; z-index: 99999; background: rgba(0,0,0,0.9); display: none; align-items: center; justify-content: center; }
+    .error-box { background: rgba(20, 10, 10, 0.9); border: 2px solid #ff4757; padding: 40px; border-radius: 20px; text-align: center; max-width: 400px; }
+    
+    /* ── Stats Counter ── */
+    .stat-box { text-align: center; padding: 12px 20px; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); }
+    .stat-value { font-family: 'Orbitron'; font-size: 1.5rem; font-weight: 700; color: var(--primary); }
+    .stat-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 2px; opacity: 0.5; }
+    
+    input[type="text"] { font-size: 16px; }
+  </style>
+</head>
+<body>
+
+  <!-- PARTICLE BACKGROUND -->
+  <canvas id="particles-canvas"></canvas>
+  
+  <!-- FLOATING ORBS -->
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+  
+  <!-- SCANLINE OVERLAY -->
+  <div class="scanline-overlay"></div>
+
+  <!-- SPLASH SCREEN -->
+  <div id="splash-screen" class="css-fade">
+    <div class="text-lg tracking-widest text-gray-400 uppercase mb-4 anim-fade-in-up" style="animation-delay: 0.2s">Welcome to</div>
+    <div class="glitch-wrapper anim-fade-in-up" style="animation-delay: 0.4s">
+      <div class="splash-title glitch-text text-[10vw] font-black leading-[0.9] text-white" data-text="WATCH NIGHT">WATCH<br>NIGHT</div>
+    </div>
+    <div class="mt-8 text-xl md:text-2xl font-bold text-gray-300 anim-fade-in-up" style="animation-delay: 0.6s">
+        Made with <span class="text-red-500 text-3xl animate-pulse">&#10084;</span> by Nikhil (Nixton)
+    </div>
+    <div class="mt-4 flex gap-2 anim-fade-in-up" style="animation-delay: 0.8s">
+      <div class="stat-box">
+        <div class="stat-value" id="statParties">0</div>
+        <div class="stat-label">Active Parties</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="statUsers">0</div>
+        <div class="stat-label">Online Users</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ERROR POPUP -->
+  <div id="errorModal">
+    <div class="error-box glass">
+      <div class="text-6xl mb-4">&#9888;&#65039;</div>
+      <h2 class="text-2xl font-bold text-red-500 mb-2">Oops!</h2>
+      <p id="errorMessage" class="text-gray-300 mb-6">Something went wrong.</p>
+      <button onclick="closeError()" class="neon-btn px-6 py-2 rounded-lg">Try Again</button>
+    </div>
+  </div>
+
+  <!-- TOAST CONTAINER -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- SETUP CONTAINER -->
+  <div id="setupContainer" class="hidden h-screen w-screen flex items-center justify-center p-4 relative z-10">
+    <div class="w-full max-w-lg glass p-6 md:p-8 rounded-2xl border-l-4 border-l-[var(--primary)] anim-fade-in-up" style="animation: fadeInUp 0.8s ease forwards, pulse-glow 4s ease-in-out infinite;">
+      <div class="text-center mb-8">
+        <h1 class="text-3xl md:text-4xl font-bold glitch-text" data-text="START PARTY" style="font-family: 'Orbitron'; text-shadow: 0 0 10px var(--primary);">START PARTY</h1>
+        <p class="text-gray-400 mt-2 text-sm typing-cursor" id="typingText"></p>
+      </div>
+
+      <div class="space-y-4">
+        <div class="relative">
+          <input type="text" id="nameInput" placeholder="Your Name" class="w-full bg-black/50 border border-white/10 rounded p-3 text-lg focus:outline-none focus:border-[var(--primary)] transition-colors" oninput="spawnParticles(this)">
+        </div>
+
+        <button onclick="createParty()" class="w-full neon-btn py-3 rounded-lg text-lg relative overflow-hidden group">
+          <span class="relative z-10">Create Party</span>
+          <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform"></div>
+        </button>
+        
+        <div class="relative flex items-center gap-3 my-2">
+          <div class="flex-1 h-px bg-white/10"></div>
+          <span class="text-xs text-gray-500 uppercase tracking-widest">or</span>
+          <div class="flex-1 h-px bg-white/10"></div>
+        </div>
+        
+        <div class="flex gap-2">
+          <input type="text" id="codeInput" placeholder="Enter Party Code" class="flex-1 bg-black/50 border border-white/10 rounded p-3 text-lg focus:outline-none text-center uppercase tracking-widest focus:border-[var(--primary)] transition-colors">
+          <button onclick="joinParty()" class="neon-btn px-6 rounded-lg text-lg">Join</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOBBY CONTAINER -->
+  <div id="lobbyContainer" class="hidden h-screen w-screen flex flex-col items-center justify-center p-4 relative z-10">
+    <div class="w-full max-w-5xl text-center anim-fade-in-up">
+      
+      <!-- Code Display -->
+      <div class="mb-8 md:mb-12 flex flex-col items-center">
+         <p class="text-gray-400 text-xs md:text-sm uppercase tracking-widest mb-2">Connected to Party</p>
+         <div class="code-container" id="codeDisplayBox">
+           <div id="displayCode" class="code-text">------</div>
+         </div>
+         <button onclick="copyCode()" class="mt-4 text-xs text-gray-400 hover:text-white flex items-center gap-1 transition-colors group">
+           <svg class="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+           Copy Code
+         </button>
+         
+         <!-- Live Party Info -->
+         <div class="mt-4 flex items-center justify-center gap-4 text-xs text-gray-500">
+           <span class="flex items-center"><span class="live-dot"></span>Live</span>
+           <span id="partyUserCount">1 member</span>
+         </div>
+      </div>
+
+      <h3 class="text-lg md:text-xl text-gray-300 mb-6 uppercase tracking-widest">Select Mode</h3>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 w-full px-2">
+        
+        <!-- Watch Together -->
+        <a href="watch.html" class="mode-card glass p-4 md:p-6 rounded-2xl cursor-pointer border border-white/10 flex flex-col items-center justify-center h-40 md:h-48 group">
+          <div class="card-glow rounded-2xl"></div>
+          <div class="card-shine rounded-2xl"></div>
+          <div class="absolute inset-0 bg-gradient-to-b from-[var(--primary)]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="text-4xl md:text-5xl mb-2 md:mb-3 transform group-hover:scale-110 transition-transform duration-300">&#127909;</div>
+          <h2 class="text-base md:text-xl font-bold" style="font-family: 'Orbitron'">Watch Together</h2>
+          <p class="text-[10px] md:text-xs text-gray-500 mt-1">Stream in Sync</p>
+        </a>
+
+        <!-- Tic Tac Toe -->
+        <a href="game.html" class="mode-card glass p-4 md:p-6 rounded-2xl cursor-pointer border border-white/10 flex flex-col items-center justify-center h-40 md:h-48 group">
+          <div class="card-glow rounded-2xl"></div>
+          <div class="card-shine rounded-2xl"></div>
+          <div class="absolute inset-0 bg-gradient-to-b from-[var(--secondary)]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="text-4xl md:text-5xl mb-2 md:mb-3 transform group-hover:scale-110 transition-transform duration-300">&#11093;</div>
+          <h2 class="text-base md:text-xl font-bold" style="font-family: 'Orbitron'">Tic Tac Toe</h2>
+          <p class="text-[10px] md:text-xs text-gray-500 mt-1">Classic Battle</p>
+        </a>
+
+        <!-- Think & Draw -->
+        <a href="draw.html" class="mode-card glass p-4 md:p-6 rounded-2xl cursor-pointer border border-white/10 flex flex-col items-center justify-center h-40 md:h-48 group">
+          <div class="card-glow rounded-2xl"></div>
+          <div class="card-shine rounded-2xl"></div>
+          <div class="absolute inset-0 bg-gradient-to-b from-green-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="text-4xl md:text-5xl mb-2 md:mb-3 transform group-hover:scale-110 transition-transform duration-300">&#127912;</div>
+          <h2 class="text-base md:text-xl font-bold" style="font-family: 'Orbitron'">Think & Draw</h2>
+          <p class="text-[10px] md:text-xs text-gray-500 mt-1">Guess the Drawing</p>
+        </a>
+
+        <!-- Ludo -->
+        <a href="ludo.html" class="mode-card glass p-4 md:p-6 rounded-2xl cursor-pointer border border-white/10 flex flex-col items-center justify-center h-40 md:h-48 group">
+          <div class="card-glow rounded-2xl"></div>
+          <div class="card-shine rounded-2xl"></div>
+          <div class="absolute inset-0 bg-gradient-to-b from-orange-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="text-4xl md:text-5xl mb-2 md:mb-3 transform group-hover:scale-110 transition-transform duration-300">&#127922;</div>
+          <h2 class="text-base md:text-xl font-bold" style="font-family: 'Orbitron'">Ludo</h2>
+          <p class="text-[10px] md:text-xs text-gray-500 mt-1">Board Game</p>
+        </a>
+
+      </div>
+      
+      <button onclick="leaveParty()" class="mt-8 md:mt-10 text-gray-600 hover:text-red-500 text-sm transition-colors flex items-center gap-1 mx-auto">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        Leave Party
+      </button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js" onerror="console.warn('Socket.IO not available - running in static mode')"></script>
+  <script src="/voice-manager.js" onerror="console.warn('Voice manager not available')"></script>
+  <script>
+    // Fallback io() if socket.io didn't load (static deployment)
+    const socket = (typeof io !== 'undefined') ? io() : { on: function() {}, emit: function() {}, to: function() { return { emit: function(){} } } };
+    let uid = localStorage.getItem('watchNightUid') || ('uid-' + Math.random().toString(36).substr(2, 9));
+    localStorage.setItem('watchNightUid', uid);
+    
+    const setupContainer = document.getElementById('setupContainer');
+    const lobbyContainer = document.getElementById('lobbyContainer');
+    const displayCode = document.getElementById('displayCode');
+
+    /* ── Particle System ── */
+    const canvas = document.getElementById('particles-canvas');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+    let w, h;
+    
+    function resizeCanvas() {
+      w = canvas.width = window.innerWidth;
+      h = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    
+    class Particle {
+      constructor() { this.reset(); }
+      reset() {
+        this.x = Math.random() * w;
+        this.y = Math.random() * h;
+        this.size = Math.random() * 2 + 0.5;
+        this.speedX = (Math.random() - 0.5) * 0.4;
+        this.speedY = (Math.random() - 0.5) * 0.4;
+        this.opacity = Math.random() * 0.6 + 0.2;
+        this.color = Math.random() > 0.5 ? '#00f3ff' : '#bc13fe';
+      }
+      update() {
+        this.x += this.speedX;
+        this.y += this.speedY;
+        if (this.x < 0 || this.x > w || this.y < 0 || this.y > h) this.reset();
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = this.opacity;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+    
+    for (let i = 0; i < 80; i++) particles.push(new Particle());
+    
+    function animateParticles() {
+      ctx.clearRect(0, 0, w, h);
+      particles.forEach(p => { p.update(); p.draw(); });
+      // Connect nearby particles
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 120) {
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.strokeStyle = 'rgba(0, 243, 255, 0.06)';
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+          }
+        }
+      }
+      requestAnimationFrame(animateParticles);
+    }
+    animateParticles();
+    
+    /* ── Typing Effect ── */
+    const typingPhrases = [
+      "Watch movies together...",
+      "Play games with friends...",
+      "Draw and guess...",
+      "Roll the dice in Ludo...",
+      "Chat in real-time voice..."
+    ];
+    let phraseIndex = 0;
+    let charIndex = 0;
+    let isDeleting = false;
+    const typingEl = document.getElementById('typingText');
+    
+    function typeEffect() {
+      const current = typingPhrases[phraseIndex];
+      if (isDeleting) {
+        typingEl.textContent = current.substring(0, charIndex - 1);
+        charIndex--;
+      } else {
+        typingEl.textContent = current.substring(0, charIndex + 1);
+        charIndex++;
+      }
+      
+      if (!isDeleting && charIndex === current.length) {
+        setTimeout(() => isDeleting = true, 1500);
+      } else if (isDeleting && charIndex === 0) {
+        isDeleting = false;
+        phraseIndex = (phraseIndex + 1) % typingPhrases.length;
+      }
+      
+      setTimeout(typeEffect, isDeleting ? 40 : 80);
+    }
+    
+    /* ── Particle Spawn on Input ── */
+    function spawnParticles(input) {
+      const rect = input.getBoundingClientRect();
+      for (let i = 0; i < 5; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle-icon';
+        p.style.left = rect.left + rect.width / 2 + 'px';
+        p.style.top = rect.top + 'px';
+        p.style.setProperty('--px', (Math.random() - 0.5) * 80 + 'px');
+        p.style.setProperty('--py', (Math.random() - 0.5) * 60 - 30 + 'px');
+        p.textContent = ['✨', '★', '•'][Math.floor(Math.random() * 3)];
+        p.style.color = Math.random() > 0.5 ? '#00f3ff' : '#bc13fe';
+        document.body.appendChild(p);
+        setTimeout(() => p.remove(), 1500);
+      }
+    }
+    
+    /* ── Toast System ── */
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast-item toast-${type}`;
+      toast.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full ${type === 'success' ? 'bg-green-400' : 'bg-cyan-400'}"></span>
+          ${message}
+        </div>
+      `;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.transition = 'all 0.4s ease';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100px)';
+        setTimeout(() => toast.remove(), 400);
+      }, 3000);
+    }
+    
+    /* ── Animated Counter ── */
+    function animateCounter(el, target, duration = 2000) {
+      let start = 0;
+      const step = timestamp => {
+        if (!start) start = timestamp;
+        const progress = Math.min((timestamp - start) / duration, 1);
+        el.textContent = Math.floor(progress * target);
+        if (progress < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+
+    /* ── Window Load ── */
+    window.onload = () => {
+      initVoiceSystem(socket);
+      typeEffect();
+      
+      // Animate counters on splash
+      animateCounter(document.getElementById('statParties'), 128);
+      animateCounter(document.getElementById('statUsers'), 452);
+      
+      const urlParams = new URLSearchParams(window.location.search);
+      const skipSplash = urlParams.get('skipSplash');
+
+      if (skipSplash === '1') {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        document.getElementById('splash-screen').classList.add('hidden');
+        const existingCode = localStorage.getItem('partyCode');
+        const existingName = localStorage.getItem('watchNightName');
+        if (existingCode && existingName) socket.emit('join-party', { roomId: existingCode, name: existingName, uid });
+        else setupContainer.classList.remove('hidden');
+      } else {
+        setTimeout(() => {
+          document.getElementById('splash-screen').classList.add('hidden');
+          const existingCode = localStorage.getItem('partyCode');
+          const existingName = localStorage.getItem('watchNightName');
+          if (existingCode && existingName) socket.emit('join-party', { roomId: existingCode, name: existingName, uid });
+          else setupContainer.classList.remove('hidden');
+        }, 3000); 
+      }
+    };
+
+    function createParty() {
+      const name = document.getElementById('nameInput').value || 'Host';
+      localStorage.setItem('watchNightName', name);
+      socket.emit('create-party', { name, uid });
+    }
+
+    socket.on('party-created', (data) => {
+      localStorage.setItem('partyCode', data.roomId);
+      localStorage.setItem('isHost', 'true');
+      showLobby(data.roomId);
+      startVoice(data.roomId, localStorage.getItem('watchNightName'));
+      showToast('Party created! Share the code.', 'success');
+    });
+
+    function joinParty() {
+      const name = document.getElementById('nameInput').value || 'Guest';
+      const code = document.getElementById('codeInput').value.toUpperCase();
+      if(!code) return showError("Please enter a code");
+      localStorage.setItem('watchNightName', name);
+      localStorage.setItem('partyCode', code);
+      localStorage.setItem('isHost', 'false');
+      socket.emit('join-party', { roomId: code, name, uid });
+    }
+
+    socket.on('party-joined', (data) => {
+      localStorage.setItem('partyCode', data.roomId);
+      showLobby(data.roomId);
+      startVoice(data.roomId, localStorage.getItem('watchNightName'));
+      showToast('Joined party ' + data.roomId, 'success');
+    });
+    
+    socket.on('user-joined-msg', (data) => {
+      showToast(`${data.name} joined the party`, 'success');
+      updatePartyCount(1);
+    });
+    
+    socket.on('user-left-msg', (data) => {
+      showToast(`${data.name} left`, 'info');
+      updatePartyCount(-1);
+    });
+
+    socket.on('error', (msg) => {
+        showError(msg);
+        if(msg.includes('not found')) { localStorage.removeItem('partyCode'); localStorage.removeItem('isHost'); }
+    });
+    
+    let partyMemberCount = 1;
+    function updatePartyCount(delta) {
+      partyMemberCount = Math.max(1, partyMemberCount + delta);
+      const el = document.getElementById('partyUserCount');
+      if (el) el.textContent = partyMemberCount + (partyMemberCount === 1 ? ' member' : ' members');
+    }
+
+    function showLobby(code) { 
+      setupContainer.classList.add('hidden'); 
+      lobbyContainer.classList.remove('hidden'); 
+      displayCode.innerText = code; 
+      // Flash the code box
+      const box = document.getElementById('codeDisplayBox');
+      box.style.animation = 'none';
+      box.offsetHeight; // trigger reflow
+      box.style.animation = 'float 3s ease-in-out infinite, border-glow 3s ease-in-out infinite';
+    }
+    
+    function showError(msg) { 
+      document.getElementById('errorMessage').innerText = msg; 
+      document.getElementById('errorModal').style.display = 'flex'; 
+    }
+    
+    function closeError() { 
+      document.getElementById('errorModal').style.display = 'none'; 
+      location.reload(); 
+    }
+    
+    function copyCode() { 
+      navigator.clipboard.writeText(displayCode.innerText); 
+      const btn = document.querySelector('[onclick="copyCode()"]'); 
+      const original = btn.innerHTML; 
+      btn.innerHTML = "<span class='text-green-400'>✓ Copied!</span>"; 
+      setTimeout(() => btn.innerHTML = original, 1500); 
+      showToast('Code copied to clipboard!', 'success');
+    }
+    
+    function leaveParty() { 
+      localStorage.removeItem('partyCode'); 
+      localStorage.removeItem('isHost'); 
+      location.reload(); 
+    }
+  </script>
+</body>
+</html>

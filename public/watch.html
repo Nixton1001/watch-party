@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Watch-Night | Party</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --primary: #00f3ff; --secondary: #bc13fe; --bg: #050505; }
+    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow: hidden; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: linear-gradient(var(--primary), var(--secondary)); border-radius: 3px; }
+    .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; }
+    .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--primary); }
+    .input-futuristic { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.1); color: white; }
+    .input-futuristic:focus { outline: none; border-color: var(--primary); }
+    .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    video { background: black; }
+    
+    .video-controls { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 60px 20px 20px; opacity: 0; transition: opacity 0.3s; }
+    .video-wrapper:hover .video-controls, .video-wrapper:active .video-controls { opacity: 1; }
+    .video-wrapper.controls-hidden .video-controls { opacity: 0 !important; pointer-events: none; }
+    
+    .control-btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; cursor: pointer; border-radius: 8px; transition: all 0.2s; }
+    .control-btn:hover { background: var(--primary); color: black; }
+    .control-btn.round { border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
+
+    #sidebar { width: 320px; display: flex; flex-direction: column; border-left: 1px solid rgba(0, 243, 255, 0.2); transition: transform 0.3s; }
+    #sidebar.hidden { display: none; }
+    .chat-message { word-wrap: break-word; margin-bottom: 8px; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border-left: 2px solid var(--primary); }
+    .progress-container { width: 100%; height: 5px; background: rgba(255,255,255,0.2); border-radius: 5px; cursor: pointer; margin-bottom: 15px; }
+    .progress-bar { height: 100%; background: linear-gradient(90deg, var(--primary), var(--secondary)); border-radius: 5px; width: 0%; }
+    
+    @media (max-width: 768px) { 
+      #sidebar { position: fixed; right: 0; top: 0; bottom: 0; width: 85%; z-index: 70; transform: translateX(100%); } 
+      #sidebar.open { transform: translateX(0); display: flex; } 
+      #sidebar.hidden { display: none; transform: translateX(100%); }
+      .video-wrapper { height: calc(100vh); }
+    }
+    
+    @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+    .waiting-text { animation: pulse 2s infinite; }
+
+    #backBtn { position: fixed; top: 20px; left: 20px; z-index: 100; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); padding: 8px 12px; border-radius: 8px; display: flex; align-items: center; gap: 5px; text-decoration: none; color: white; font-size: 14px; transition: all 0.3s; }
+    #backBtn:hover { background: var(--primary); color: black; }
+
+    /* Toast */
+    @keyframes slideIn { from { opacity: 0; transform: translateX(100px); } to { opacity: 1; transform: translateX(0); } }
+    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; }
+    .toast-item { padding: 10px 18px; border-radius: 10px; font-size: 0.875rem; font-weight: 500; backdrop-filter: blur(10px); animation: slideIn 0.4s ease; border-left: 3px solid; }
+    .toast-success { background: rgba(0,0,0,0.8); color: #4ade80; border-color: #4ade80; }
+    .toast-info { background: rgba(0,0,0,0.8); color: #22d3ee; border-color: #22d3ee; }
+    .toast-error { background: rgba(0,0,0,0.8); color: #f87171; border-color: #f87171; }
+
+    /* Join notification banner */
+    .join-banner { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); border: 1px solid var(--primary); color: var(--primary); padding: 8px 20px; border-radius: 20px; font-size: 0.85rem; z-index: 80; animation: fadeUp 0.5s ease, fadeOut 0.5s ease 2.5s forwards; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+    @keyframes fadeOut { to { opacity: 0; transform: translateX(-50%) translateY(-10px); } }
+  </style>
+</head>
+<body>
+
+  <!-- Back to Lobby Button -->
+  <a href="/?skipSplash=1" id="backBtn">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+    Lobby
+  </a>
+
+  <!-- TOAST CONTAINER -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- HOST SETUP POPUP -->
+  <div id="hostSetupModal" class="hidden fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4">
+    <div class="glass p-8 rounded-2xl w-full max-w-md border border-[var(--primary)]" style="animation: fadeInUp 0.5s ease;">
+      <div class="text-center mb-6">
+        <h2 class="text-2xl font-bold" style="font-family: 'Orbitron'">Party Created</h2>
+        <div class="text-xs text-gray-400 mt-1">Share this code</div>
+        <div id="hostDisplayCode" class="text-4xl font-bold text-[var(--primary)] tracking-widest my-4">------</div>
+      </div>
+      <div class="space-y-4">
+        <input type="text" id="welcomeMsgInput" placeholder="Welcome Message (Optional)" class="w-full input-futuristic p-3 rounded-lg">
+        <label class="block w-full text-center control-btn p-3 rounded-lg cursor-pointer hover:border-[var(--primary)]" style="width:100%; height:auto; border-radius: 0.5rem;">
+          <input type="file" id="videoUploadInput" accept="video/*" onchange="hostUploadVideo(this)" class="hidden">
+          <span id="uploadLabel">Upload Video (Max 1GB)</span>
+        </label>
+        <div class="text-center text-gray-500 text-xs">OR</div>
+        <div class="flex gap-2">
+          <input type="text" id="videoLinkInput" placeholder="Paste Video Link" class="flex-1 input-futuristic p-3 rounded-lg">
+          <button onclick="hostLoadLink()" class="neon-btn px-4 rounded-lg">Load</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GUEST WAITING SCREEN -->
+  <div id="guestWaitingScreen" class="hidden fixed inset-0 z-[9998] bg-black flex items-center justify-center p-4 flex-col text-center">
+     <div class="text-6xl mb-4">&#9203;</div>
+     <h2 class="text-2xl font-bold text-gray-300 waiting-text">Waiting for Host...</h2>
+     <p class="text-gray-500 mt-2">The host has not started the stream yet.</p>
+     <div class="mt-4 text-xs text-gray-600">Voice Chat is Active</div>
+  </div>
+
+  <!-- WELCOME POPUP -->
+  <div id="welcomeModal" class="hidden fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4">
+    <div class="glass p-8 rounded-2xl w-full max-w-md border border-green-500/30 text-center" style="animation: fadeInUp 0.5s ease;">
+      <div class="text-6xl mb-4">&#128075;</div>
+      <div id="welcomeText" class="text-2xl font-bold text-white mb-6">Welcome!</div>
+      <button onclick="closeWelcome()" class="neon-btn px-6 py-2 rounded-lg">Continue</button>
+    </div>
+  </div>
+
+  <!-- MAIN UI -->
+  <div id="watchRoom" class="hidden h-screen w-screen flex relative">
+    <div class="flex-1 flex flex-col bg-black relative video-wrapper" id="videoWrapper">
+      <video id="mainVideo" class="w-full h-full" playsinline preload="metadata"></video>
+      
+      <div class="video-controls flex flex-col justify-end">
+        <div id="progressContainer" class="progress-container"><div id="progressBar" class="progress-bar"></div></div>
+        
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-1">
+             <button onclick="skip(-10)" class="control-btn round" title="Back 10s">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.334 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"/></svg>
+             </button>
+             
+             <button onclick="togglePlayPause()" class="control-btn round" style="width:50px; height:50px;" title="Play/Pause">
+              <svg id="playIcon" class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+              <svg id="pauseIcon" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+
+             <button onclick="skip(10)" class="control-btn round" title="Forward 10s">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z"/></svg>
+             </button>
+
+            <span id="timeDisplay" class="text-sm font-mono text-gray-300 ml-2">0:00</span>
+          </div>
+
+          <div class="flex items-center gap-1">
+             <button onclick="toggleVoiceMic()" id="localMicBtn" class="control-btn round" title="Toggle Mic">
+                <svg id="localMicIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
+             </button>
+
+             <button onclick="toggleChat()" class="control-btn round hidden md:flex" title="Chat">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+             </button>
+
+             <button onclick="toggleFullscreen()" class="control-btn round" title="Fullscreen">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="sidebar" class="glass">
+      <div id="chatBox" class="flex-1 overflow-y-auto p-4 space-y-2">
+        <div id="messagesContainer"></div>
+      </div>
+      <div class="p-4 border-t border-white/10">
+        <div class="flex gap-2">
+          <input type="text" id="chatInput" placeholder="Message..." class="flex-1 input-futuristic text-sm p-2 rounded-full" onkeypress="if(event.key==='Enter')sendMessage()">
+          <button onclick="sendMessage()" class="text-[var(--primary)] p-2">&#10148;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/voice-manager.js"></script>
+  <script>
+    const socket = io();
+    const video = document.getElementById('mainVideo');
+    const wrapper = document.getElementById('videoWrapper');
+    let isHost = false;
+    let myName = localStorage.getItem('watchNightName');
+    let partyCode = localStorage.getItem('partyCode');
+    let myUid = localStorage.getItem('watchNightUid');
+    let syncInterval;
+    let hideTimeout;
+
+    /* ── Toast System ── */
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast-item toast-${type}`;
+      toast.innerHTML = `<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full ${type==='success'?'bg-green-400':type==='error'?'bg-red-400':'bg-cyan-400'}"></span>${message}</div>`;
+      container.appendChild(toast);
+      setTimeout(() => { toast.style.transition = 'all 0.4s ease'; toast.style.opacity = '0'; toast.style.transform = 'translateX(100px)'; setTimeout(() => toast.remove(), 400); }, 3000);
+    }
+
+    /* ── Join Banner ── */
+    function showJoinBanner(name) {
+      const existing = document.querySelector('.join-banner');
+      if (existing) existing.remove();
+      const banner = document.createElement('div');
+      banner.className = 'join-banner';
+      banner.textContent = `${name} joined the party`;
+      document.body.appendChild(banner);
+      setTimeout(() => banner.remove(), 3000);
+    }
+
+    // --- AUDIO BOOST LOGIC (200%) ---
+    let audioContext;
+    let gainNode;
+
+    function initAudioBooster() {
+        if (audioContext) return;
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioContext.createMediaElementSource(video);
+            gainNode = audioContext.createGain();
+            gainNode.gain.value = 2.0; 
+            source.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            console.log("Audio Booster Initialized: 200% Volume");
+        } catch (e) {
+            console.error("Audio Boost Error:", e);
+        }
+    }
+
+    document.body.addEventListener('click', () => initAudioBooster(), { once: true });
+    video.addEventListener('play', () => initAudioBooster(), { once: true });
+
+    window.onload = async () => {
+      if(!partyCode) window.location.href = '/';
+      document.getElementById('watchRoom').classList.remove('hidden');
+      window.customMicUI = true; 
+      initVoiceSystem(socket);
+      setupAutoHide();
+      socket.emit('join-party', { roomId: partyCode, name: myName, uid: myUid });
+    };
+
+    function setupAutoHide() {
+        const showControls = () => { wrapper.classList.remove('controls-hidden'); clearTimeout(hideTimeout); if (!video.paused) hideTimeout = setTimeout(() => wrapper.classList.add('controls-hidden'), 4000); };
+        wrapper.addEventListener('mousemove', showControls); wrapper.addEventListener('touchstart', showControls); wrapper.addEventListener('click', showControls);
+        video.onpause = () => { wrapper.classList.remove('controls-hidden'); clearTimeout(hideTimeout); updateIcons(); };
+        video.onplay = () => { showControls(); updateIcons(); if(isHost) socket.emit('sync-video', { type: 'play', time: video.currentTime }); };
+    }
+
+    socket.on('party-joined', (data) => {
+      isHost = data.isHost;
+      startVoice(data.roomId, myName); 
+      if (isHost) {
+          if(data.videoSrc) { video.src = data.videoSrc; video.play(); document.getElementById('hostSetupModal').classList.add('hidden'); }
+          else { document.getElementById('hostSetupModal').classList.remove('hidden'); document.getElementById('hostDisplayCode').innerText = partyCode; }
+      } else {
+          if(data.welcomeMsg) { document.getElementById('welcomeText').innerText = data.welcomeMsg; document.getElementById('welcomeModal').classList.remove('hidden'); }
+          if(data.videoSrc) { video.src = data.videoSrc; video.play(); startUltraSync(); document.getElementById('guestWaitingScreen').classList.add('hidden'); }
+          else { document.getElementById('guestWaitingScreen').classList.remove('hidden'); }
+      }
+    });
+    
+    // Join/leave notifications
+    socket.on('user-joined-msg', (data) => { showToast(`${data.name} joined`, 'success'); showJoinBanner(data.name); });
+    socket.on('user-left-msg', (data) => { showToast(`${data.name} left`, 'info'); });
+
+    function closeWelcome() { document.getElementById('welcomeModal').classList.add('hidden'); }
+
+    function hostLoadLink() {
+        const url = document.getElementById('videoLinkInput').value; if(!url) return;
+        const msg = document.getElementById('welcomeMsgInput').value; if(msg) socket.emit('set-welcome-msg', { msg });
+        video.src = url; video.play(); socket.emit('sync-video', { type: 'src', src: url });
+        document.getElementById('hostSetupModal').classList.add('hidden');
+    }
+
+    async function hostUploadVideo(input) {
+        if (input.files[0]) {
+            document.getElementById('uploadLabel').innerText = "Uploading...";
+            const formData = new FormData(); formData.append('video', input.files[0]);
+            const msg = document.getElementById('welcomeMsgInput').value; if(msg) socket.emit('set-welcome-msg', { msg });
+            try {
+                const res = await fetch('/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.filePath) { video.src = data.filePath; video.play(); socket.emit('sync-video', { type: 'src', src: data.filePath }); document.getElementById('hostSetupModal').classList.add('hidden'); showToast('Video uploaded!', 'success'); }
+            } catch(e) { showToast('Upload failed', 'error'); }
+        }
+    }
+
+    function startUltraSync() { if(syncInterval) clearInterval(syncInterval); syncInterval = setInterval(() => socket.emit('request-sync'), 50); }
+    function skip(seconds) { video.currentTime += seconds; if(isHost) socket.emit('sync-video', { type: 'seek', time: video.currentTime }); }
+
+    socket.on('sync-video', (data) => {
+      const isBuffering = video.readyState < 3;
+      if(data.type === 'play') { if (!isBuffering && Math.abs(video.currentTime - data.time) > 3) video.currentTime = data.time; video.play(); }
+      else if(data.type === 'pause') { video.currentTime = data.time || video.currentTime; video.pause(); }
+      else if(data.type === 'seek') { if (!isBuffering && Math.abs(video.currentTime - data.time) > 1.0) video.currentTime = data.time; }
+      else if(data.type === 'src') { video.src = data.src; video.play(); document.getElementById('guestWaitingScreen').classList.add('hidden'); startUltraSync(); }
+    });
+    
+    socket.on('get-state', (data) => socket.emit('send-state', { to: data.requester, time: video.currentTime, playing: !video.paused }));
+    socket.on('user-disconnected', (data) => console.log("User left:", data.id));
+
+    function togglePlayPause() { if(video.paused) video.play(); else video.pause(); }
+    video.onseeked = () => { if(isHost) socket.emit('sync-video', { type: 'seek', time: video.currentTime }); };
+    video.ontimeupdate = () => { progressBar.style.width = (video.currentTime / video.duration) * 100 + '%'; document.getElementById('timeDisplay').innerText = formatTime(video.currentTime); };
+    progressContainer.onclick = (e) => video.currentTime = (e.offsetX / progressContainer.clientWidth) * video.duration;
+    
+    function updateIcons() { document.getElementById('playIcon').classList.toggle('hidden', !video.paused); document.getElementById('pauseIcon').classList.toggle('hidden', video.paused); }
+    function formatTime(s) { if(!s || isNaN(s)) return "0:00"; const m = Math.floor(s / 60); const sec = Math.floor(s % 60); return `${m}:${sec.toString().padStart(2, '0')}`; }
+    
+    function sendMessage() { const i = document.getElementById('chatInput'); if(!i.value.trim()) return; socket.emit('chat-message', { name: myName, msg: i.value }); i.value = ''; }
+    socket.on('chat-message', (data) => { const d = document.createElement('div'); d.className='chat-message text-sm'; d.innerHTML=`<span class="font-bold text-[var(--primary)]">${data.name}:</span> ${data.msg}`; document.getElementById('messagesContainer').appendChild(d); document.getElementById('chatBox').scrollTop = document.getElementById('chatBox').scrollHeight; });
+    
+    function toggleFullscreen() { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(err => console.log(err)); else document.exitFullscreen(); }
+    function toggleChat() { const sidebar = document.getElementById('sidebar'); sidebar.classList.toggle('hidden'); sidebar.classList.remove('open'); }
+  </script>
+</body>
+</html>
