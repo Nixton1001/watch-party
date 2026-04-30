@@ -19,7 +19,7 @@
     .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
     video { background: black; }
     
-    .video-controls { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 60px 20px 20px; opacity: 0; transition: opacity 0.3s; }
+    .video-controls { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 60px 20px 20px; opacity: 0; transition: opacity 0.3s; z-index: 20; }
     .video-wrapper:hover .video-controls, .video-wrapper:active .video-controls { opacity: 1; }
     .video-wrapper.controls-hidden .video-controls { opacity: 0 !important; pointer-events: none; }
     
@@ -57,8 +57,22 @@
     @keyframes fadeUp { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
     @keyframes fadeOut { to { opacity: 0; transform: translateX(-50%) translateY(-10px); } }
     
-    /* Click to Play Overlay */
-    #autoplay-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 50; cursor: pointer; }
+    /* Interaction Overlay (Fixes Voice & Autoplay) */
+    #interaction-overlay { 
+        position: fixed; inset: 0; z-index: 60; 
+        background: rgba(0,0,0,0.85); 
+        display: flex; flex-direction: column; 
+        align-items: center; justify-content: center; 
+        cursor: pointer; 
+    }
+    .pulse-ring { 
+        position: absolute; width: 100px; height: 100px; border-radius: 50%; 
+        border: 2px solid var(--primary); animation: pulse-ring 1.5s infinite; 
+    }
+    @keyframes pulse-ring {
+        0% { transform: scale(0.5); opacity: 1; }
+        100% { transform: scale(1.5); opacity: 0; }
+    }
   </style>
 </head>
 <body>
@@ -69,6 +83,17 @@
   </a>
 
   <div class="toast-container" id="toastContainer"></div>
+
+  <!-- INTERACTION OVERLAY (Required to start Voice & Video) -->
+  <div id="interaction-overlay" class="hidden">
+      <div class="pulse-ring"></div>
+      <div class="relative z-10 text-center p-8 glass rounded-2xl border border-white/10">
+          <div class="text-6xl mb-4">&#127909;</div>
+          <h2 class="text-2xl font-bold mb-2" style="font-family: 'Orbitron'">Ready to Join?</h2>
+          <p class="text-gray-400 mb-4">Click anywhere to enable Voice & Video</p>
+          <button class="neon-btn px-8 py-3 rounded-lg text-lg">Start Session</button>
+      </div>
+  </div>
 
   <!-- HOST SETUP POPUP -->
   <div id="hostSetupModal" class="hidden fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4">
@@ -98,7 +123,7 @@
      <div class="text-6xl mb-4">&#9203;</div>
      <h2 class="text-2xl font-bold text-gray-300 waiting-text">Waiting for Host...</h2>
      <p class="text-gray-500 mt-2">The host has not started the stream yet.</p>
-     <div class="mt-4 text-xs text-gray-600">Voice Chat is Active</div>
+     <div class="mt-4 text-xs text-gray-600">Voice Chat will activate automatically</div>
   </div>
 
   <!-- WELCOME POPUP -->
@@ -114,14 +139,6 @@
   <div id="watchRoom" class="hidden h-screen w-screen flex relative">
     <div class="flex-1 flex flex-col bg-black relative video-wrapper" id="videoWrapper">
       <video id="mainVideo" class="w-full h-full" playsinline preload="metadata"></video>
-      
-      <!-- Autoplay Unblocker Overlay -->
-      <div id="autoplay-overlay" class="hidden">
-          <div class="text-center p-4">
-              <div class="text-6xl mb-4">&#9654;</div>
-              <p class="text-xl font-bold">Click to Start Watching</p>
-          </div>
-      </div>
 
       <div class="video-controls flex flex-col justify-end">
         <div id="progressContainer" class="progress-container"><div id="progressBar" class="progress-bar"></div></div>
@@ -179,13 +196,16 @@
     const socket = io();
     const video = document.getElementById('mainVideo');
     const wrapper = document.getElementById('videoWrapper');
-    const autoplayOverlay = document.getElementById('autoplay-overlay');
+    const interactionOverlay = document.getElementById('interaction-overlay');
+    
     let isHost = false;
     let myName = localStorage.getItem('watchNightName');
     let partyCode = localStorage.getItem('partyCode');
     let myUid = localStorage.getItem('watchNightUid');
     let syncInterval;
     let hideTimeout;
+    let voiceStarted = false;
+    let currentRoomId = null;
 
     function showToast(message, type = 'info') {
       const container = document.getElementById('toastContainer');
@@ -218,33 +238,32 @@
             gainNode.gain.value = 2.0; 
             source.connect(gainNode);
             gainNode.connect(audioContext.destination);
+            showToast('Audio Boosted to 200%', 'success');
         } catch (e) { console.error("Audio Boost Error:", e); }
     }
-    
-    // Initialize on first click anywhere
-    document.body.addEventListener('click', () => initAudioBooster(), { once: true });
 
-    // --- AUTOPLAY FIX ---
-    // Try to play, if failed show overlay
-    function attemptPlay() {
-        if (!video.src) return;
-        const playPromise = video.play();
-        if (playPromise !== undefined) {
-            playPromise.then(_ => {
-                autoplayOverlay.classList.add('hidden');
-            }).catch(error => {
-                console.log("Autoplay blocked, showing overlay");
-                autoplayOverlay.classList.remove('hidden');
-            });
+    // --- MAIN INTERACTION HANDLER (Fixes Voice & Autoplay) ---
+    async function handleUserInteraction() {
+        if (interactionOverlay.classList.contains('hidden')) return;
+        
+        interactionOverlay.classList.add('hidden');
+        
+        // 1. Init Audio
+        initAudioBooster();
+
+        // 2. Start Voice (Requires click gesture)
+        if (!voiceStarted && currentRoomId) {
+            startVoice(currentRoomId, myName);
+            voiceStarted = true;
+        }
+
+        // 3. Try playing video if source exists
+        if (video.src) {
+            video.play().catch(e => console.log("Play deferred"));
         }
     }
-    
-    // Click handler for overlay
-    autoplayOverlay.addEventListener('click', () => {
-        video.play();
-        initAudioBooster();
-        autoplayOverlay.classList.add('hidden');
-    });
+
+    interactionOverlay.addEventListener('click', handleUserInteraction);
 
     window.onload = async () => {
       if(!partyCode) window.location.href = '/';
@@ -264,23 +283,32 @@
 
     socket.on('party-joined', (data) => {
       isHost = data.isHost;
-      startVoice(data.roomId, myName); 
+      currentRoomId = data.roomId;
+      
+      // Show interaction overlay immediately to request click for Voice
+      interactionOverlay.classList.remove('hidden');
+
       if (isHost) {
           if(data.videoSrc) { 
               video.src = data.videoSrc; 
-              attemptPlay(); 
               document.getElementById('hostSetupModal').classList.add('hidden'); 
           }
-          else { document.getElementById('hostSetupModal').classList.remove('hidden'); document.getElementById('hostDisplayCode').innerText = partyCode; }
+          else { 
+              document.getElementById('hostSetupModal').classList.remove('hidden'); 
+              document.getElementById('hostDisplayCode').innerText = partyCode; 
+              // Hide overlay until upload happens, but we need interaction for voice
+              // Keep overlay or handle interaction on upload button
+          }
       } else {
           if(data.welcomeMsg) { document.getElementById('welcomeText').innerText = data.welcomeMsg; document.getElementById('welcomeModal').classList.remove('hidden'); }
           if(data.videoSrc) { 
               video.src = data.videoSrc; 
-              attemptPlay();
-              startUltraSync(); 
               document.getElementById('guestWaitingScreen').classList.add('hidden'); 
           }
-          else { document.getElementById('guestWaitingScreen').classList.remove('hidden'); }
+          else { 
+              document.getElementById('guestWaitingScreen').classList.remove('hidden');
+              interactionOverlay.classList.add('hidden'); // Don't show interaction overlay if waiting for host
+          }
       }
     });
     
@@ -293,9 +321,10 @@
         const url = document.getElementById('videoLinkInput').value; if(!url) return;
         const msg = document.getElementById('welcomeMsgInput').value; if(msg) socket.emit('set-welcome-msg', { msg });
         video.src = url; 
-        attemptPlay();
         socket.emit('sync-video', { type: 'src', src: url });
         document.getElementById('hostSetupModal').classList.add('hidden');
+        // Ensure interaction overlay is shown if not clicked yet
+        if (interactionOverlay.classList.contains('hidden')) interactionOverlay.classList.remove('hidden');
     }
 
     async function hostUploadVideo(input) {
@@ -308,37 +337,35 @@
                 const data = await res.json();
                 if (data.filePath) { 
                     video.src = data.filePath; 
-                    attemptPlay(); 
                     socket.emit('sync-video', { type: 'src', src: data.filePath }); 
                     document.getElementById('hostSetupModal').classList.add('hidden'); 
-                    showToast('Video uploaded!', 'success'); 
+                    showToast('Video uploaded!', 'success');
+                    // Ensure interaction overlay is shown
+                    if (interactionOverlay.classList.contains('hidden')) interactionOverlay.classList.remove('hidden');
                 }
             } catch(e) { showToast('Upload failed', 'error'); }
         }
     }
 
-    // FIX: Changed from 50ms to 3000ms (3 seconds)
-    function startUltraSync() { 
-        if(syncInterval) clearInterval(syncInterval); 
-        syncInterval = setInterval(() => socket.emit('request-sync'), 500); 
-    }
-    
+    function startUltraSync() { if(syncInterval) clearInterval(syncInterval); syncInterval = setInterval(() => socket.emit('request-sync'), 3000); }
     function skip(seconds) { video.currentTime += seconds; if(isHost) socket.emit('sync-video', { type: 'seek', time: video.currentTime }); }
 
     socket.on('sync-video', (data) => {
       const isBuffering = video.readyState < 3;
-      if(data.type === 'play') { 
+      
+      if(data.type === 'src') { 
+          video.src = data.src; 
+          document.getElementById('guestWaitingScreen').classList.add('hidden');
+          interactionOverlay.classList.remove('hidden'); // Show overlay to start
+          startUltraSync(); 
+      }
+      else if(data.type === 'play') { 
           if (!isBuffering && Math.abs(video.currentTime - data.time) > 3) video.currentTime = data.time; 
-          attemptPlay(); // Use safe play
+          // Only play if overlay is gone (user clicked)
+          if (interactionOverlay.classList.contains('hidden')) video.play().catch(e => {});
       }
       else if(data.type === 'pause') { video.currentTime = data.time || video.currentTime; video.pause(); }
       else if(data.type === 'seek') { if (!isBuffering && Math.abs(video.currentTime - data.time) > 1.0) video.currentTime = data.time; }
-      else if(data.type === 'src') { 
-          video.src = data.src; 
-          attemptPlay(); // Use safe play
-          document.getElementById('guestWaitingScreen').classList.add('hidden'); 
-          startUltraSync(); 
-      }
     });
     
     socket.on('get-state', (data) => socket.emit('send-state', { to: data.requester, time: video.currentTime, playing: !video.paused }));
