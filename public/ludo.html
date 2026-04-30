@@ -8,345 +8,195 @@
   <script src="/socket.io/socket.io.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
   <style>
-    :root { --primary: #00f3ff; --secondary: #bc13fe; --bg: #050505; --red: #ff4757; --green: #2ed573; --yellow: #ffa502; --blue: #1e90ff; }
-    body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: white; overflow: hidden; }
-    
-    .glass { background: rgba(10, 10, 10, 0.7); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
-    .neon-btn { background: linear-gradient(45deg, var(--primary), var(--secondary)); color: black; font-weight: bold; transition: all 0.3s; }
-    .neon-btn:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--primary); }
-    .neon-btn:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
+    :root { --primary:#00f3ff; --secondary:#bc13fe; --bg:#050505; --red:#ff4757; --green:#2ed573; --yellow:#ffa502; --blue:#1e90ff; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Rajdhani',sans-serif;background:var(--bg);color:#fff;overflow-x:hidden;min-height:100vh}
 
-    /* LUDO BOARD */
-    #ludo-board { display: grid; grid-template-columns: repeat(15, 1fr); grid-template-rows: repeat(15, 1fr); width: min(90vw, 600px); height: min(90vw, 600px); background: #1a1a1a; border: 4px solid var(--primary); box-shadow: 0 0 30px rgba(0, 243, 255, 0.2); }
-    .cell { border: 1px solid rgba(255,255,255,0.1); position: relative; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-size: 0.5rem; color: rgba(255,255,255,0.1); }
-    
-    /* Colors */
-    .zone-red { background: rgba(255, 71, 87, 0.3); }
-    .zone-green { background: rgba(46, 213, 115, 0.3); }
-    .zone-yellow { background: rgba(255, 165, 2, 0.3); }
-    .zone-blue { background: rgba(30, 144, 255, 0.3); }
-    
-    .safe-star::after { content: '★'; color: rgba(255,255,255,0.5); font-size: 1rem; }
+    .glass{background:rgba(10,10,10,.75);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.08)}
+    .neon-btn{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#000;font-weight:700;font-family:'Rajdhani',sans-serif;letter-spacing:.5px;transition:all .25s;cursor:pointer;border:none}
+    .neon-btn:hover{filter:brightness(1.15);box-shadow:0 0 24px rgba(0,243,255,.35)}
+    .neon-btn:disabled{opacity:.4;cursor:not-allowed;filter:grayscale(1);box-shadow:none}
 
-    /* Tokens */
-    .token { width: 80%; height: 80%; border-radius: 50%; border: 2px solid white; cursor: pointer; transition: transform 0.1s; position: absolute; z-index: 10; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
-    .token:hover { transform: scale(1.2); z-index: 20; }
-    .token.highlight { animation: pulse 1s infinite; box-shadow: 0 0 15px var(--primary); cursor: pointer; }
-    
-    @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+    /* ── Board ── */
+    #ludo-board{display:grid;grid-template-columns:repeat(15,1fr);grid-template-rows:repeat(15,1fr);width:min(88vw,540px);height:min(88vw,540px);border:3px solid rgba(255,255,255,.25);border-radius:8px;overflow:hidden;box-shadow:0 0 40px rgba(0,243,255,.1),inset 0 0 60px rgba(0,0,0,.5);position:relative}
+    .cell{position:relative;display:flex;align-items:center;justify-content:center;border:.5px solid rgba(0,0,0,.3);transition:background .2s}
 
-    /* Dice */
-    .dice { width: 60px; height: 60px; background: white; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: bold; color: black; cursor: pointer; transition: transform 0.1s; }
-    .dice.rolling { animation: roll 0.5s ease-out; }
-    .dice.disabled { opacity: 0.5; cursor: not-allowed; }
-    @keyframes roll { 0% { transform: rotateX(0) rotateY(0); } 100% { transform: rotateX(720deg) rotateY(720deg); } }
+    /* Home zones */
+    .zone-red{background:linear-gradient(135deg,rgba(255,71,87,.28),rgba(255,71,87,.14))}
+    .zone-green{background:linear-gradient(135deg,rgba(46,213,115,.28),rgba(46,213,115,.14))}
+    .zone-yellow{background:linear-gradient(135deg,rgba(255,165,2,.28),rgba(255,165,2,.14))}
+    .zone-blue{background:linear-gradient(135deg,rgba(30,144,255,.28),rgba(30,144,255,.14))}
+    .home-inner{background:rgba(255,255,255,.08)!important;border:1px solid rgba(255,255,255,.06)!important}
+    .home-spot{width:70%;height:70%;border-radius:50%;background:rgba(255,255,255,.06);border:1.5px dashed rgba(255,255,255,.15)}
 
-    /* Winner Overlay */
-    #winner-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
-    
-    #backBtn { position: fixed; top: 20px; left: 20px; z-index: 100; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); padding: 8px 12px; border-radius: 8px; display: flex; align-items: center; gap: 5px; text-decoration: none; color: white; font-size: 14px; transition: all 0.3s; }
-    #backBtn:hover { background: var(--primary); color: black; }
+    /* Path */
+    .path-cell{background:rgba(235,235,235,.88)}
+
+    /* Start cells */
+    .start-red{background:rgba(255,71,87,.6)!important}
+    .start-green{background:rgba(46,213,115,.6)!important}
+    .start-yellow{background:rgba(255,165,2,.6)!important}
+    .start-blue{background:rgba(30,144,255,.6)!important}
+    .start-red::after,.start-green::after,.start-yellow::after,.start-blue::after{content:'▶';font-size:.55rem;opacity:.5;position:absolute}
+    .start-red::after{color:#fff}
+    .start-green::after{color:#fff;transform:rotate(90deg)}
+    .start-yellow::after{color:#fff;transform:rotate(180deg)}
+    .start-blue::after{color:#fff;transform:rotate(270deg)}
+
+    /* Safe stars */
+    .safe-cell{background:rgba(210,210,210,.7)!important}
+    .safe-cell::after{content:'★';position:absolute;font-size:.75rem;color:rgba(0,0,0,.22);pointer-events:none}
+
+    /* Home stretches */
+    .hs-red{background:rgba(255,71,87,.32)!important}
+    .hs-green{background:rgba(46,213,115,.32)!important}
+    .hs-yellow{background:rgba(255,165,2,.32)!important}
+    .hs-blue{background:rgba(30,144,255,.32)!important}
+
+    /* Center */
+    .center-cell{background:conic-gradient(from 45deg,var(--red),var(--green),var(--yellow),var(--blue),var(--red));opacity:.65}
+
+    /* ── Tokens ── */
+    .token{width:72%;height:72%;border-radius:50%;border:2.5px solid rgba(255,255,255,.9);position:absolute;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.45);transition:transform .12s,box-shadow .12s;cursor:default}
+    .token-red{background:radial-gradient(circle at 35% 35%,#ff6b7a,var(--red))}
+    .token-green{background:radial-gradient(circle at 35% 35%,#5ae89c,var(--green))}
+    .token-yellow{background:radial-gradient(circle at 35% 35%,#ffba33,var(--yellow))}
+    .token-blue{background:radial-gradient(circle at 35% 35%,#4da8ff,var(--blue))}
+    .token.highlight{animation:tpulse .8s ease-in-out infinite;cursor:pointer;z-index:20;box-shadow:0 0 12px var(--primary),0 0 24px rgba(0,243,255,.3);border-color:var(--primary)}
+    @keyframes tpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+    .token.stack-0{top:12%;left:12%}
+    .token.stack-1{top:12%;left:48%}
+    .token.stack-2{top:48%;left:12%}
+    .token.stack-3{top:48%;left:48%}
+
+    /* ── Dice ── */
+    .dice-box{width:64px;height:64px;background:#fff;border-radius:12px;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:8px;gap:2px;cursor:pointer;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+    .dice-box:hover:not(.disabled){transform:scale(1.05);box-shadow:0 4px 20px rgba(0,243,255,.3)}
+    .dice-box.disabled{opacity:.35;cursor:not-allowed}
+    .dice-box.rolling{animation:droll .6s ease-out}
+    @keyframes droll{0%{transform:rotateX(0) rotateZ(0) scale(1)}25%{transform:rotateX(180deg) rotateZ(90deg) scale(.9)}50%{transform:rotateX(360deg) rotateZ(180deg) scale(1.1)}75%{transform:rotateX(540deg) rotateZ(270deg) scale(.95)}100%{transform:rotateX(720deg) rotateZ(360deg) scale(1)}}
+    .dot{width:100%;height:100%;border-radius:50%;background:transparent;transition:background .1s}
+    .dot.on{background:#1a1a1a}
+
+    /* ── Overlays ── */
+    #waitingScreen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:50}
+    #winner-overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;animation:fadeUp .5s}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+    #backBtn{position:fixed;top:16px;left:16px;z-index:100;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.15);padding:6px 14px;border-radius:8px;display:flex;align-items:center;gap:6px;text-decoration:none;color:#ccc;font-size:13px;font-family:'Rajdhani',sans-serif;transition:all .25s}
+    #backBtn:hover{background:var(--primary);color:#000;border-color:var(--primary)}
+    .player-row{transition:all .3s}
+    .player-row.active-turn{box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)}
+
+    /* Toast */
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.88);border:1px solid rgba(255,255,255,.15);color:#fff;padding:8px 22px;border-radius:24px;font-size:14px;z-index:200;animation:tin .3s,tout .3s 1.7s forwards;pointer-events:none;white-space:nowrap}
+    @keyframes tin{from{opacity:0;transform:translateX(-50%) translateY(16px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+    @keyframes tout{from{opacity:1}to{opacity:0}}
+
+    /* Capture flash */
+    .capture-flash{animation:cflash .4s}
+    @keyframes cflash{0%{box-shadow:0 0 0 0 rgba(255,0,0,.6)}50%{box-shadow:0 0 20px 8px rgba(255,0,0,.4)}100%{box-shadow:0 0 0 0 transparent}}
   </style>
 </head>
 <body class="flex flex-col items-center justify-center min-h-screen">
 
-  <!-- Back to Lobby Button -->
   <a href="/?skipSplash=1" id="backBtn">
     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
     Lobby
   </a>
 
-  <!-- Waiting Screen -->
-  <div id="waitingScreen" class="fixed inset-0 bg-black flex flex-col items-center justify-center z-50">
-    <div class="text-6xl mb-4 animate-bounce">🎲</div>
-    <h2 class="text-2xl font-bold" style="font-family: 'Orbitron'">Waiting for Players...</h2>
-    <p class="text-gray-400 mt-2">Need at least 2 players to start</p>
-    <div class="flex gap-4 mt-6">
-       <div class="w-4 h-4 rounded-full bg-red-500 animate-pulse"></div>
-       <div class="w-4 h-4 rounded-full bg-green-500 animate-pulse" style="animation-delay: 0.2s"></div>
-       <div class="w-4 h-4 rounded-full bg-yellow-500 animate-pulse" style="animation-delay: 0.4s"></div>
-       <div class="w-4 h-4 rounded-full bg-blue-500 animate-pulse" style="animation-delay: 0.6s"></div>
+  <div id="waitingScreen">
+    <div class="text-6xl mb-6 animate-bounce">🎲</div>
+    <h2 class="text-3xl font-bold mb-2" style="font-family:'Orbitron'">Waiting for Players</h2>
+    <p class="text-gray-500 text-lg">Need at least 2 to start</p>
+    <div class="flex gap-5 mt-8">
+      <div class="w-5 h-5 rounded-full bg-red-500 animate-pulse"></div>
+      <div class="w-5 h-5 rounded-full bg-green-500 animate-pulse" style="animation-delay:.15s"></div>
+      <div class="w-5 h-5 rounded-full bg-yellow-500 animate-pulse" style="animation-delay:.3s"></div>
+      <div class="w-5 h-5 rounded-full bg-blue-500 animate-pulse" style="animation-delay:.45s"></div>
     </div>
-    <p id="playerCountText" class="text-sm text-gray-600 mt-4">Players: 1</p>
+    <p id="playerCountText" class="text-sm text-gray-600 mt-5">Players: 1</p>
   </div>
 
-  <!-- Winner Overlay -->
   <div id="winner-overlay">
-    <h1 class="text-6xl font-bold mb-4" style="font-family: 'Orbitron'">🏆 WINNER 🏆</h1>
-    <p id="winner-name" class="text-3xl text-[var(--primary)]">Player 1</p>
-    <button onclick="resetGame()" class="neon-btn mt-8 px-6 py-2 rounded-lg">Play Again</button>
+    <div class="text-7xl mb-4">🏆</div>
+    <h1 class="text-5xl font-bold mb-3" style="font-family:'Orbitron'">WINNER</h1>
+    <p id="winner-name" class="text-3xl font-bold" style="color:var(--primary)">Player</p>
+    <button onclick="resetGame()" class="neon-btn mt-8 px-8 py-3 rounded-xl text-lg">Play Again</button>
   </div>
 
-  <!-- Game UI -->
-  <div class="flex flex-col md:flex-row items-center gap-8 p-4 hidden" id="gameContainer">
-    
-    <!-- Left Panel: Players & Dice -->
-    <div class="glass p-4 rounded-xl flex flex-col items-center gap-4 w-full md:w-auto order-2 md:order-1">
-      <h3 style="font-family: 'Orbitron'" class="text-xl text-center">TURN: <span id="turnIndicator" class="text-[var(--primary)]">RED</span></h3>
-      
-      <div class="dice-container">
-        <div id="dice" class="dice disabled" onclick="rollDice()">?</div>
+  <div class="flex flex-col md:flex-row items-center justify-center gap-6 p-4 hidden" id="gameContainer">
+    <div class="glass rounded-2xl p-5 flex flex-col items-center gap-3 w-full md:w-52 order-2 md:order-1">
+      <h3 style="font-family:'Orbitron'" class="text-lg tracking-wide">TURN <span id="turnIndicator" class="text-[var(--primary)]">—</span></h3>
+      <div id="dice" class="dice-box disabled" onclick="rollDice()">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
       </div>
-      
-      <p id="diceResult" class="text-sm text-gray-400 h-6"></p>
-
-      <div class="space-y-2 w-full mt-4">
-        <div id="p-red" class="flex justify-between items-center p-2 rounded bg-red-500/20 border border-red-500/50 opacity-30"><span>Player 1</span><span class="text-xs opacity-75">0/4 Home</span></div>
-        <div id="p-green" class="flex justify-between items-center p-2 rounded bg-green-500/20 border border-green-500/50 opacity-30"><span>Player 2</span><span class="text-xs opacity-75">0/4 Home</span></div>
-        <div id="p-yellow" class="flex justify-between items-center p-2 rounded bg-yellow-500/20 border border-yellow-500/50 opacity-30"><span>Player 3</span><span class="text-xs opacity-75">0/4 Home</span></div>
-        <div id="p-blue" class="flex justify-between items-center p-2 rounded bg-blue-500/20 border border-blue-500/50 opacity-30"><span>Player 4</span><span class="text-xs opacity-75">0/4 Home</span></div>
+      <p id="diceResult" class="text-xs text-gray-500 h-5 text-center"></p>
+      <div class="w-full space-y-2 mt-3">
+        <div id="p-red" class="player-row flex justify-between items-center px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 opacity-30">
+          <span class="text-sm font-bold">Red</span><span class="text-xs text-gray-400">0/4</span>
+        </div>
+        <div id="p-green" class="player-row flex justify-between items-center px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/30 opacity-30">
+          <span class="text-sm font-bold">Green</span><span class="text-xs text-gray-400">0/4</span>
+        </div>
+        <div id="p-yellow" class="player-row flex justify-between items-center px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 opacity-30">
+          <span class="text-sm font-bold">Yellow</span><span class="text-xs text-gray-400">0/4</span>
+        </div>
+        <div id="p-blue" class="player-row flex justify-between items-center px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30 opacity-30">
+          <span class="text-sm font-bold">Blue</span><span class="text-xs text-gray-400">0/4</span>
+        </div>
       </div>
     </div>
-
-    <!-- Center: Board -->
     <div id="ludo-board" class="order-1 md:order-2"></div>
-
   </div>
 
   <script src="/voice-manager.js"></script>
   <script>
+    /* ═══════════════════════════════════════════════════════════════
+       LUDO CLIENT — Fixed path rendering & game UI
+       ═══════════════════════════════════════════════════════════════ */
+
     const socket = io();
-    let partyCode = localStorage.getItem('partyCode');
-    let myName = localStorage.getItem('watchNightName');
-    let myUid = localStorage.getItem('watchNightUid');
-    
-    // Game State
-    let gameState = {
-        active: false,
-        turn: 'red',
-        dice: 0,
-        pieces: {},
-        players: { red: null, green: null, yellow: null, blue: null }
+    const partyCode = localStorage.getItem('partyCode');
+    const myName    = localStorage.getItem('watchNightName');
+    const myUid     = localStorage.getItem('watchNightUid');
+    if (!partyCode) window.location.href = '/';
+
+    // ─── Complete 52-cell outer path (clockwise from Red's entry) ──
+    const PATH = [
+      [6,1],[6,2],[6,3],[6,4],[6,5],             //  0‑4   Red start row →
+      [5,6],[4,6],[3,6],[2,6],[1,6],[0,6],       //  5‑10  ↑ up
+      [0,7],[0,8],                                // 11‑12  top turn
+      [1,8],[2,8],[3,8],[4,8],[5,8],             // 13‑17  Green start ↓
+      [6,9],[6,10],[6,11],[6,12],[6,13],[6,14],  // 18‑23  → right
+      [7,14],[8,14],                              // 24‑25  right turn
+      [8,13],[8,12],[8,11],[8,10],[8,9],         // 26‑30  Yellow start ←
+      [9,8],[10,8],[11,8],[12,8],[13,8],[14,8],  // 31‑36  ↓ down
+      [14,7],[14,6],                              // 37‑38  bottom turn
+      [13,6],[12,6],[11,6],[10,6],[9,6],         // 39‑43  Blue start ↑
+      [8,5],[8,4],[8,3],[8,2],[8,1],[8,0],       // 44‑49  ← left
+      [7,0],[6,0]                                 // 50‑51  left turn
+    ];
+
+    // 5-cell home stretches leading to center
+    const HOME_STRETCH = {
+      red:    [[7,1],[7,2],[7,3],[7,4],[7,5]],
+      green:  [[1,7],[2,7],[3,7],[4,7],[5,7]],
+      yellow: [[7,13],[7,12],[7,11],[7,10],[7,9]],
+      blue:   [[13,7],[12,7],[11,7],[10,7],[9,7]]
     };
 
-    const colors = ['red', 'green', 'yellow', 'blue'];
-    
-    // Mapping for simplified positions on board (Home Bases)
-    const homeCoords = {
-        red: [[2, 2], [2, 3], [3, 2], [3, 3]], // 4 pieces
-        green: [[2, 11], [2, 12], [3, 11], [3, 12]],
-        yellow: [[11, 11], [11, 12], [12, 11], [12, 12]],
-        blue: [[11, 2], [11, 3], [12, 2], [12, 3]]
+    // Path index where each color enters the outer loop
+    const ENTRY = { red: 0, green: 13, yellow: 26, blue: 39 };
+
+    // Parking spots inside each home base (piece indices 0‑3)
+    const HOME_BASE = {
+      red:    [[2,2],[2,3],[3,2],[3,3]],
+      green:  [[2,11],[2,12],[3,11],[3,12]],
+      yellow: [[11,11],[11,12],[12,11],[12,12]],
+      blue:   [[11,2],[11,3],[12,2],[12,3]]
     };
 
-    // --- INIT ---
-    window.onload = () => {
-      initVoiceSystem(socket);
-      
-      if(!partyCode) window.location.href = '/';
-      
-      generateBoard();
-      
-      socket.emit('join-party', { roomId: partyCode, name: myName, uid: myUid });
-      socket.emit('join-ludo', { roomId: partyCode, name: myName, uid: myUid });
-      
-      setTimeout(() => startVoice(partyCode, myName), 1000);
-    };
-
-    // --- BOARD GENERATION ---
-    function generateBoard() {
-        const board = document.getElementById('ludo-board');
-        board.innerHTML = '';
-        for(let r=0; r<15; r++) {
-            for(let c=0; c<15; c++) {
-                const cell = document.createElement('div');
-                cell.id = `cell-${r}-${c}`;
-                cell.className = 'cell';
-                
-                // Home Bases
-                if(r<6 && c<6) cell.classList.add('zone-red');
-                if(r<6 && c>8) cell.classList.add('zone-green');
-                if(r>8 && c>8) cell.classList.add('zone-yellow');
-                if(r>8 && c<6) cell.classList.add('zone-blue');
-
-                // Center Home
-                if(r>=6 && r<=8 && c>=6 && c<=8) cell.style.background = 'linear-gradient(45deg, var(--red), var(--green), var(--yellow), var(--blue))';
-
-                // Safe Stars (Simplified visual indicators)
-                if((r===2 && c===6) || (r===6 && c===12) || (r===12 && c===8) || (r===8 && c===2)) cell.classList.add('safe-star');
-
-                board.appendChild(cell);
-            }
-        }
-    }
-
-    // --- SOCKET EVENTS ---
-    socket.on('ludo-state', (state) => {
-        gameState = state;
-        document.getElementById('waitingScreen').classList.add('hidden');
-        document.getElementById('gameContainer').classList.remove('hidden');
-        renderGame();
-    });
-
-    socket.on('ludo-waiting', (data) => {
-        document.getElementById('playerCountText').innerText = `Players: ${data.count}`;
-    });
-
-    socket.on('ludo-update', (state) => {
-        gameState = state;
-        renderGame();
-    });
-    
-    socket.on('ludo-error', (msg) => {
-        alert(msg);
-        window.location.href = '/?skipSplash=1';
-    });
-
-    // --- GAME LOGIC ---
-    
-    function rollDice() {
-        const myColor = getColorBySocketId(socket.id);
-        if (gameState.turn !== myColor) return;
-        
-        const diceEl = document.getElementById('dice');
-        diceEl.classList.add('rolling');
-        
-        setTimeout(() => {
-            const res = Math.floor(Math.random() * 6) + 1;
-            diceEl.classList.remove('rolling');
-            diceEl.innerText = res;
-            document.getElementById('diceResult').innerText = `You rolled ${res}!`;
-            
-            socket.emit('ludo-roll', { roomId: partyCode, result: res });
-        }, 500);
-    }
-
-    function moveToken(tokenId) {
-        socket.emit('ludo-move', { roomId: partyCode, tokenId });
-    }
-
-    function renderGame() {
-        // 1. Update Turn Indicator & Dice State
-        const myColor = getColorBySocketId(socket.id);
-        const isMyTurn = gameState.turn === myColor;
-        
-        document.getElementById('turnIndicator').innerText = gameState.turn.toUpperCase();
-        document.getElementById('turnIndicator').style.color = `var(--${gameState.turn})`;
-        
-        const diceEl = document.getElementById('dice');
-        if (isMyTurn && gameState.dice === 0) {
-            diceEl.classList.remove('disabled');
-            diceEl.innerText = '?';
-        } else {
-            diceEl.classList.add('disabled');
-            if(gameState.dice !== 0) diceEl.innerText = gameState.dice;
-        }
-
-        // 2. Update Player List UI
-        colors.forEach(c => {
-            const pDiv = document.getElementById(`p-${c}`);
-            if(gameState.players[c]) {
-                pDiv.style.opacity = '1';
-                pDiv.querySelector('span:first-child').innerText = gameState.players[c].name;
-                // Count finished pieces
-                const finished = Object.values(gameState.pieces).filter(p => p.color === c && p.pos === 'finished').length;
-                pDiv.querySelector('span:last-child').innerText = `${finished}/4 Done`;
-                if(gameState.turn === c) pDiv.style.border = '2px solid white';
-                else pDiv.style.border = 'none';
-            } else {
-                pDiv.style.opacity = '0.3';
-                pDiv.querySelector('span:first-child').innerText = 'Waiting...';
-            }
-        });
-
-        // 3. Render Tokens
-        // Clear existing tokens
-        document.querySelectorAll('.token').forEach(t => t.remove());
-        
-        for(let id in gameState.pieces) {
-            const piece = gameState.pieces[id];
-            
-            // Only render if not finished
-            if(piece.pos === 'finished') continue;
-
-            const token = document.createElement('div');
-            token.className = `token`;
-            token.style.background = `var(--${piece.color})`;
-            
-            // Logic to determine coordinates
-            let r, c;
-            
-            if(piece.pos === 'home') {
-                // Find which piece index this is (0-3) to place in correct home slot
-                const pieceIndex = parseInt(id.split('-')[1]);
-                const coords = homeCoords[piece.color][pieceIndex];
-                r = coords[0];
-                c = coords[1];
-            } else {
-                // Simplified Path Rendering
-                // Real Ludo requires complex path mapping.
-                // This maps the linear position to a rough visual path for demo.
-                // Note: This visual path does not match exact Ludo rules (start positions differ per color).
-                const pos = piece.pos;
-                
-                // Very simplified visual path (A loop around the board)
-                // Red start approx 1,6. Green 8,1. Yellow 13,8. Blue 6,13.
-                // This is just visual sugar for the demo.
-                const pathCoords = calculatePathCoord(piece.color, pos);
-                r = pathCoords[0];
-                c = pathCoords[1];
-            }
-
-            const targetCell = document.getElementById(`cell-${r}-${c}`);
-            if(targetCell) {
-                targetCell.appendChild(token);
-                
-                // Highlight logic (Can move?)
-                // If it's my turn, I rolled, and this piece can theoretically move (simplified: always allow if not home or home+6)
-                if(isMyTurn && gameState.dice > 0) {
-                    if(piece.pos === 'home' && gameState.dice === 6) token.classList.add('highlight');
-                    else if(piece.pos !== 'home') token.classList.add('highlight');
-                    
-                    if(token.classList.contains('highlight')) {
-                        token.onclick = () => moveToken(id);
-                    }
-                }
-            }
-        }
-    }
-    
-    // Helper to map linear pos to grid (Visual approximation)
-    function calculatePathCoord(color, pos) {
-        // This is a hacky visual mapping for the demo.
-        // Maps 0-56 steps to grid coordinates starting from each color's start.
-        // Real implementation needs a 52-step coordinate array.
-        
-        // Start points on the grid (approx)
-        const starts = { red: [6, 1], green: [1, 8], yellow: [8, 13], blue: [13, 6] };
-        
-        // Simple circular path for visual demo (not accurate to real game rules)
-        // We just rotate a virtual position based on color.
-        let offset = 0;
-        if(color === 'green') offset = 13;
-        if(color === 'yellow') offset = 26;
-        if(color === 'blue') offset = 39;
-        
-        // This is purely visual to see pieces move.
-        const realPos = (pos + offset) % 52;
-        
-        // Define the outer path manually (simplified)
-        // Top row (left to right), Right col (top to bot), Bot row (right to left), Left col (bot to top)
-        if(realPos < 6) return [6, 1 + realPos]; // Red start moving right
-        if(realPos < 12) return [6 - (realPos - 5), 7]; // Up
-        // ... this logic is tedious for a single file.
-        // Instead, we just place them on a simple spiral for the demo visuals.
-        
-        // Just return a coordinate based on pos modulo grid size for now so we see movement
-        // x = pos % 15, y = (pos * 2) % 15
-        return [ (pos % 13) + 1, ((pos * 2) % 13) + 1 ]; 
-    }
-
-    function getColorBySocketId(id) {
-        for(let c of colors) {
-            if(gameState.players[c] && gameState.players[c].id === id) return c;
-        }
-        return null;
-    }
-
-    function resetGame() {
-        document.getElementById('winner-overlay').style.display = 'none';
-        socket.emit('ludo-restart', { roomId: partyCode });
-    }
-  </script>
-</body>
-</html>
+    // Safe path indices (starts + stars) — can't be captured here
+    const SAFE_INDICES = new Set([0, 8,
