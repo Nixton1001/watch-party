@@ -46,34 +46,33 @@
     #backBtn { position: fixed; top: 20px; left: 20px; z-index: 100; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); padding: 8px 12px; border-radius: 8px; display: flex; align-items: center; gap: 5px; text-decoration: none; color: white; font-size: 14px; transition: all 0.3s; }
     #backBtn:hover { background: var(--primary); color: black; }
 
-    /* Toast */
+    /* Toast & Banner */
     @keyframes slideIn { from { opacity: 0; transform: translateX(100px); } to { opacity: 1; transform: translateX(0); } }
     .toast-container { position: fixed; top: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; }
     .toast-item { padding: 10px 18px; border-radius: 10px; font-size: 0.875rem; font-weight: 500; backdrop-filter: blur(10px); animation: slideIn 0.4s ease; border-left: 3px solid; }
     .toast-success { background: rgba(0,0,0,0.8); color: #4ade80; border-color: #4ade80; }
     .toast-info { background: rgba(0,0,0,0.8); color: #22d3ee; border-color: #22d3ee; }
     .toast-error { background: rgba(0,0,0,0.8); color: #f87171; border-color: #f87171; }
-
-    /* Join notification banner */
     .join-banner { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); border: 1px solid var(--primary); color: var(--primary); padding: 8px 20px; border-radius: 20px; font-size: 0.85rem; z-index: 80; animation: fadeUp 0.5s ease, fadeOut 0.5s ease 2.5s forwards; }
     @keyframes fadeUp { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
     @keyframes fadeOut { to { opacity: 0; transform: translateX(-50%) translateY(-10px); } }
+    
+    /* Click to Play Overlay */
+    #autoplay-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 50; cursor: pointer; }
   </style>
 </head>
 <body>
 
-  <!-- Back to Lobby Button -->
   <a href="/?skipSplash=1" id="backBtn">
     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
     Lobby
   </a>
 
-  <!-- TOAST CONTAINER -->
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- HOST SETUP POPUP -->
   <div id="hostSetupModal" class="hidden fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4">
-    <div class="glass p-8 rounded-2xl w-full max-w-md border border-[var(--primary)]" style="animation: fadeInUp 0.5s ease;">
+    <div class="glass p-8 rounded-2xl w-full max-w-md border border-[var(--primary)]">
       <div class="text-center mb-6">
         <h2 class="text-2xl font-bold" style="font-family: 'Orbitron'">Party Created</h2>
         <div class="text-xs text-gray-400 mt-1">Share this code</div>
@@ -81,7 +80,7 @@
       </div>
       <div class="space-y-4">
         <input type="text" id="welcomeMsgInput" placeholder="Welcome Message (Optional)" class="w-full input-futuristic p-3 rounded-lg">
-        <label class="block w-full text-center control-btn p-3 rounded-lg cursor-pointer hover:border-[var(--primary)]" style="width:100%; height:auto; border-radius: 0.5rem;">
+        <label class="block w-full text-center control-btn p-3 rounded-lg cursor-pointer hover:border-[var(--primary)]">
           <input type="file" id="videoUploadInput" accept="video/*" onchange="hostUploadVideo(this)" class="hidden">
           <span id="uploadLabel">Upload Video (Max 1GB)</span>
         </label>
@@ -104,7 +103,7 @@
 
   <!-- WELCOME POPUP -->
   <div id="welcomeModal" class="hidden fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4">
-    <div class="glass p-8 rounded-2xl w-full max-w-md border border-green-500/30 text-center" style="animation: fadeInUp 0.5s ease;">
+    <div class="glass p-8 rounded-2xl w-full max-w-md border border-green-500/30 text-center">
       <div class="text-6xl mb-4">&#128075;</div>
       <div id="welcomeText" class="text-2xl font-bold text-white mb-6">Welcome!</div>
       <button onclick="closeWelcome()" class="neon-btn px-6 py-2 rounded-lg">Continue</button>
@@ -116,6 +115,14 @@
     <div class="flex-1 flex flex-col bg-black relative video-wrapper" id="videoWrapper">
       <video id="mainVideo" class="w-full h-full" playsinline preload="metadata"></video>
       
+      <!-- Autoplay Unblocker Overlay -->
+      <div id="autoplay-overlay" class="hidden">
+          <div class="text-center p-4">
+              <div class="text-6xl mb-4">&#9654;</div>
+              <p class="text-xl font-bold">Click to Start Watching</p>
+          </div>
+      </div>
+
       <div class="video-controls flex flex-col justify-end">
         <div id="progressContainer" class="progress-container"><div id="progressBar" class="progress-bar"></div></div>
         
@@ -172,6 +179,7 @@
     const socket = io();
     const video = document.getElementById('mainVideo');
     const wrapper = document.getElementById('videoWrapper');
+    const autoplayOverlay = document.getElementById('autoplay-overlay');
     let isHost = false;
     let myName = localStorage.getItem('watchNightName');
     let partyCode = localStorage.getItem('partyCode');
@@ -179,7 +187,6 @@
     let syncInterval;
     let hideTimeout;
 
-    /* ── Toast System ── */
     function showToast(message, type = 'info') {
       const container = document.getElementById('toastContainer');
       const toast = document.createElement('div');
@@ -189,7 +196,6 @@
       setTimeout(() => { toast.style.transition = 'all 0.4s ease'; toast.style.opacity = '0'; toast.style.transform = 'translateX(100px)'; setTimeout(() => toast.remove(), 400); }, 3000);
     }
 
-    /* ── Join Banner ── */
     function showJoinBanner(name) {
       const existing = document.querySelector('.join-banner');
       if (existing) existing.remove();
@@ -203,7 +209,6 @@
     // --- AUDIO BOOST LOGIC (200%) ---
     let audioContext;
     let gainNode;
-
     function initAudioBooster() {
         if (audioContext) return;
         try {
@@ -213,14 +218,33 @@
             gainNode.gain.value = 2.0; 
             source.connect(gainNode);
             gainNode.connect(audioContext.destination);
-            console.log("Audio Booster Initialized: 200% Volume");
-        } catch (e) {
-            console.error("Audio Boost Error:", e);
+        } catch (e) { console.error("Audio Boost Error:", e); }
+    }
+    
+    // Initialize on first click anywhere
+    document.body.addEventListener('click', () => initAudioBooster(), { once: true });
+
+    // --- AUTOPLAY FIX ---
+    // Try to play, if failed show overlay
+    function attemptPlay() {
+        if (!video.src) return;
+        const playPromise = video.play();
+        if (playPromise !== undefined) {
+            playPromise.then(_ => {
+                autoplayOverlay.classList.add('hidden');
+            }).catch(error => {
+                console.log("Autoplay blocked, showing overlay");
+                autoplayOverlay.classList.remove('hidden');
+            });
         }
     }
-
-    document.body.addEventListener('click', () => initAudioBooster(), { once: true });
-    video.addEventListener('play', () => initAudioBooster(), { once: true });
+    
+    // Click handler for overlay
+    autoplayOverlay.addEventListener('click', () => {
+        video.play();
+        initAudioBooster();
+        autoplayOverlay.classList.add('hidden');
+    });
 
     window.onload = async () => {
       if(!partyCode) window.location.href = '/';
@@ -242,25 +266,35 @@
       isHost = data.isHost;
       startVoice(data.roomId, myName); 
       if (isHost) {
-          if(data.videoSrc) { video.src = data.videoSrc; video.play(); document.getElementById('hostSetupModal').classList.add('hidden'); }
+          if(data.videoSrc) { 
+              video.src = data.videoSrc; 
+              attemptPlay(); 
+              document.getElementById('hostSetupModal').classList.add('hidden'); 
+          }
           else { document.getElementById('hostSetupModal').classList.remove('hidden'); document.getElementById('hostDisplayCode').innerText = partyCode; }
       } else {
           if(data.welcomeMsg) { document.getElementById('welcomeText').innerText = data.welcomeMsg; document.getElementById('welcomeModal').classList.remove('hidden'); }
-          if(data.videoSrc) { video.src = data.videoSrc; video.play(); startUltraSync(); document.getElementById('guestWaitingScreen').classList.add('hidden'); }
+          if(data.videoSrc) { 
+              video.src = data.videoSrc; 
+              attemptPlay();
+              startUltraSync(); 
+              document.getElementById('guestWaitingScreen').classList.add('hidden'); 
+          }
           else { document.getElementById('guestWaitingScreen').classList.remove('hidden'); }
       }
     });
     
-    // Join/leave notifications
     socket.on('user-joined-msg', (data) => { showToast(`${data.name} joined`, 'success'); showJoinBanner(data.name); });
-    socket.on('user-left-msg', (data) => { showToast(`${data.name} left`, 'info'); });
+    socket.on('user-left-msg', (data) => showToast(`${data.name} left`, 'info'));
 
     function closeWelcome() { document.getElementById('welcomeModal').classList.add('hidden'); }
 
     function hostLoadLink() {
         const url = document.getElementById('videoLinkInput').value; if(!url) return;
         const msg = document.getElementById('welcomeMsgInput').value; if(msg) socket.emit('set-welcome-msg', { msg });
-        video.src = url; video.play(); socket.emit('sync-video', { type: 'src', src: url });
+        video.src = url; 
+        attemptPlay();
+        socket.emit('sync-video', { type: 'src', src: url });
         document.getElementById('hostSetupModal').classList.add('hidden');
     }
 
@@ -272,20 +306,39 @@
             try {
                 const res = await fetch('/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                if (data.filePath) { video.src = data.filePath; video.play(); socket.emit('sync-video', { type: 'src', src: data.filePath }); document.getElementById('hostSetupModal').classList.add('hidden'); showToast('Video uploaded!', 'success'); }
+                if (data.filePath) { 
+                    video.src = data.filePath; 
+                    attemptPlay(); 
+                    socket.emit('sync-video', { type: 'src', src: data.filePath }); 
+                    document.getElementById('hostSetupModal').classList.add('hidden'); 
+                    showToast('Video uploaded!', 'success'); 
+                }
             } catch(e) { showToast('Upload failed', 'error'); }
         }
     }
 
-    function startUltraSync() { if(syncInterval) clearInterval(syncInterval); syncInterval = setInterval(() => socket.emit('request-sync'), 50); }
+    // FIX: Changed from 50ms to 3000ms (3 seconds)
+    function startUltraSync() { 
+        if(syncInterval) clearInterval(syncInterval); 
+        syncInterval = setInterval(() => socket.emit('request-sync'), 500); 
+    }
+    
     function skip(seconds) { video.currentTime += seconds; if(isHost) socket.emit('sync-video', { type: 'seek', time: video.currentTime }); }
 
     socket.on('sync-video', (data) => {
       const isBuffering = video.readyState < 3;
-      if(data.type === 'play') { if (!isBuffering && Math.abs(video.currentTime - data.time) > 3) video.currentTime = data.time; video.play(); }
+      if(data.type === 'play') { 
+          if (!isBuffering && Math.abs(video.currentTime - data.time) > 3) video.currentTime = data.time; 
+          attemptPlay(); // Use safe play
+      }
       else if(data.type === 'pause') { video.currentTime = data.time || video.currentTime; video.pause(); }
       else if(data.type === 'seek') { if (!isBuffering && Math.abs(video.currentTime - data.time) > 1.0) video.currentTime = data.time; }
-      else if(data.type === 'src') { video.src = data.src; video.play(); document.getElementById('guestWaitingScreen').classList.add('hidden'); startUltraSync(); }
+      else if(data.type === 'src') { 
+          video.src = data.src; 
+          attemptPlay(); // Use safe play
+          document.getElementById('guestWaitingScreen').classList.add('hidden'); 
+          startUltraSync(); 
+      }
     });
     
     socket.on('get-state', (data) => socket.emit('send-state', { to: data.requester, time: video.currentTime, playing: !video.paused }));
