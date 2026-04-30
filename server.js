@@ -23,7 +23,7 @@ const gameRooms = {};
 const drawRooms = {}; 
 const voiceRooms = {}; 
 const ludoRooms = {};
-const disconnectTimeouts = {}; // Store timeouts for grace period
+const disconnectTimeouts = {}; 
 
 const wordList = ["Apple", "Banana", "Car", "Dog", "Elephant", "Fire", "Guitar", "House", "Ice", "Jelly", "Kite", "Lion", "Moon", "Night", "Orange", "Pizza", "Queen", "Rocket", "Sun", "Tree", "Umbrella", "Violin", "Water", "Xylophone", "Yellow", "Zebra", "Book", "Chair", "Door", "Fish", "Ghost", "Heart", "Juice", "King", "Lamp", "Mouse", "Nose", "Ocean", "Pencil", "Smile", "Tiger", "Cloud", "Box", "Cat", "Drum", "Hat", "Jar", "Key", "Leaf"];
 
@@ -90,7 +90,6 @@ io.on('connection', (socket) => {
     const party = parties[data.roomId];
     if (!party) return socket.emit('error', 'Party not found');
     
-    // CLEAR DISCONNECT TIMEOUT IF RECONNECTING
     if (disconnectTimeouts[data.roomId]) {
         clearTimeout(disconnectTimeouts[data.roomId]);
         delete disconnectTimeouts[data.roomId];
@@ -132,28 +131,81 @@ io.on('connection', (socket) => {
   socket.on('send-state', (data) => { io.to(data.to).emit('sync-video', { type: data.playing ? 'play' : 'pause', time: data.time }); });
 
   // ==========================================
-  // --- VOICE SYSTEM ---
+  // --- VOICE SYSTEM (PeerJS Updated) ---
   // ==========================================
   socket.on('join-voice', (data) => {
     if (!voiceRooms[data.roomId]) voiceRooms[data.roomId] = [];
     const existing = voiceRooms[data.roomId].find(u => u.id === socket.id);
-    if (!existing) voiceRooms[data.roomId].push({ id: socket.id, name: data.name });
+    if (!existing) {
+      // STORE PEER ID (Critical for PeerJS)
+      voiceRooms[data.roomId].push({ id: socket.id, name: data.name, peerId: data.peerId });
+    } else {
+      existing.peerId = data.peerId; // Update if rejoining
+    }
     
-    // Send list to requester
+    // Send list of existing users (with peerIds) to requester
     const existingUsers = voiceRooms[data.roomId].filter(u => u.id !== socket.id);
     socket.emit('voice-users-list', existingUsers);
     
-    // Notify others
-    socket.to(data.roomId).emit('voice-user-joined', { id: socket.id, name: data.name });
+    // Notify others (send peerId)
+    socket.to(data.roomId).emit('voice-user-joined', { id: socket.id, name: data.name, peerId: data.peerId });
   });
 
-  socket.on('voice-signal', (data) => { 
-    io.to(data.to).emit('voice-signal', { from: socket.id, signal: data.signal }); 
+  socket.on('disconnect', () => {
+    // Voice Cleanup
+    for (let roomId in voiceRooms) {
+      const len = voiceRooms[roomId].length; 
+      voiceRooms[roomId] = voiceRooms[roomId].filter(u => u.id !== socket.id);
+      if (voiceRooms[roomId].length < len) socket.to(roomId).emit('voice-user-left', { id: socket.id });
+      if (voiceRooms[roomId].length === 0) delete voiceRooms[roomId];
+    }
+    
+    // Party Cleanup (Grace Period)
+    if (socket.partyCode && parties[socket.partyCode]) {
+      const party = parties[socket.partyCode];
+      const leavingName = party.names && party.names[socket.id] || 'Someone';
+      socket.to(socket.partyCode).emit('user-left-msg', { id: socket.id, name: leavingName });
+      socket.to(socket.partyCode).emit('user-disconnected', { id: socket.id });
+
+      disconnectTimeouts[socket.partyCode] = setTimeout(() => {
+        if (parties[socket.partyCode]) {
+             const p = parties[socket.partyCode];
+             p.users = p.users.filter(id => id !== socket.id);
+             delete p.names[socket.id];
+             if (p.hostSocketId === socket.id) p.hostSocketId = null;
+             if (p.users.length === 0) delete parties[socket.partyCode];
+        }
+      }, 10000);
+    }
+    
+    // Game Cleanup (Tic Tac Toe)
+    if (socket.gameRoomId && gameRooms[socket.gameRoomId]) { delete gameRooms[socket.gameRoomId]; io.to(socket.gameRoomId).emit('game-error', 'Opponent Disconnected'); }
+    
+    // Draw Cleanup
+    if (socket.drawRoomId && drawRooms[socket.drawRoomId]) {
+        const room = drawRooms[socket.drawRoomId]; room.players = room.players.filter(p => p.id !== socket.id);
+        if (room.drawer && room.drawer.id === socket.id) {
+            if(room.timer) clearInterval(room.timer); io.to(socket.drawRoomId).emit('round-end', { word: room.word || '---', players: room.players, error: 'Drawer Left!' });
+             setTimeout(() => { if (room.players.length < 2) { io.to(socket.drawRoomId).emit('game-over', { players: room.players }); delete drawRooms[socket.drawRoomId]; } else { room.round++; startDrawRound(socket.drawRoomId); } }, 3000);
+        } else {
+             io.to(socket.drawRoomId).emit('draw-update', { players: room.players, drawer: room.drawer });
+             if (room.players.length < 2) { if(room.timer) clearInterval(room.timer); io.to(socket.drawRoomId).emit('draw-waiting', { players: room.players, message: 'Waiting for players...' }); room.status = 'waiting'; }
+        }
+    }
+    
+    // Ludo Cleanup
+    if (socket.ludoRoom && ludoRooms[socket.ludoRoom]) {
+        const room = ludoRooms[socket.ludoRoom];
+        for(let color of ludoColors) { if(room.players[color] && room.players[color].id === socket.id) room.players[color] = null; }
+        io.to(socket.ludoRoom).emit('ludo-error', 'A player disconnected.'); delete ludoRooms[socket.ludoRoom];
+    }
   });
 
   // ==========================================
-  // --- GAME: TIC TAC TOE ---
+  // --- GAMES LOGIC (Unchanged) ---
   // ==========================================
+  
+  // TIC TAC TOE
   socket.on('join-game-room', (data) => {
     const { roomId, name } = data;
     if (!gameRooms[roomId]) gameRooms[roomId] = { players: [], board: Array(9).fill(null), turn: 'X', finished: false, restartRequests: new Set() };
@@ -177,12 +229,10 @@ io.on('connection', (socket) => {
     for(let w of wins) { const [a,b,c] = w; if(game.board[a] && game.board[a] === game.board[b] && game.board[a] === game.board[c]) { winner = game.board[a]; winLine = w; break; } }
     if (winner) {
       const winnerPlayer = game.players.find(p => p.symbol === winner); if(winnerPlayer) winnerPlayer.score += 50;
-      game.finished = true;
-      game.restartRequests.clear();
+      game.finished = true; game.restartRequests.clear();
       io.to(socket.gameRoomId).emit('game-update', { board: game.board, turn: game.turn, result: { winner, line: winLine }, players: game.players });
     } else if (!game.board.includes(null)) {
-      game.finished = true;
-      game.restartRequests.clear();
+      game.finished = true; game.restartRequests.clear();
       io.to(socket.gameRoomId).emit('game-update', { board: game.board, turn: game.turn, result: { draw: true }, players: game.players });
     } else {
       game.turn = game.turn === 'X' ? 'O' : 'X';
@@ -196,17 +246,12 @@ io.on('connection', (socket) => {
     game.restartRequests.add(socket.id);
     socket.to(roomId).emit('restart-requested');
     if (game.restartRequests.size === 2) {
-      game.board = Array(9).fill(null);
-      game.turn = 'X';
-      game.finished = false;
-      game.restartRequests.clear();
+      game.board = Array(9).fill(null); game.turn = 'X'; game.finished = false; game.restartRequests.clear();
       io.to(roomId).emit('game-start', game);
     }
   });
 
-  // ==========================================
-  // --- GAME: THINK & DRAW ---
-  // ==========================================
+  // THINK & DRAW
   function startDrawRound(roomId) {
     const room = drawRooms[roomId]; if (!room) return;
     room.status = 'choosing'; room.boardData = []; room.guessedPlayers = [];
@@ -259,11 +304,8 @@ io.on('connection', (socket) => {
     } else { let isClose = false; if(word.includes(guess) || guess.includes(word)) isClose = true; io.to(socket.drawRoomId).emit('draw-chat', { name: data.name, msg: data.guess, system: false, close: isClose }); }
   });
 
-  // ==========================================
-  // --- GAME: LUDO ---
-  // ==========================================
+  // LUDO
   const ludoColors = ['red', 'green', 'yellow', 'blue'];
-
   socket.on('join-ludo', (data) => {
     const { roomId, name, uid } = data;
     if (!ludoRooms[roomId]) {
@@ -275,7 +317,6 @@ io.on('connection', (socket) => {
     for (let color of ludoColors) { if (room.players[color] && room.players[color].uid === uid) { room.players[color].id = socket.id; assignedColor = color; break; } }
     if (!assignedColor) { for (let color of ludoColors) { if (room.players[color] === null) { room.players[color] = { id: socket.id, name, uid }; assignedColor = color; break; } } }
     if (!assignedColor) return socket.emit('ludo-error', 'Game Full');
-
     socket.join(roomId); socket.ludoRoom = roomId;
     const playerCount = Object.values(room.players).filter(p => p !== null).length;
     if(playerCount >= 2) {
@@ -286,14 +327,12 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('ludo-waiting', { count: playerCount });
     }
   });
-
   socket.on('ludo-roll', (data) => {
     const room = ludoRooms[socket.ludoRoom]; if (!room || !room.active) return;
     const player = room.players[room.turn]; if (!player || player.id !== socket.id) return;
     room.dice = data.result;
     io.to(socket.ludoRoom).emit('ludo-update', room);
   });
-
   socket.on('ludo-move', (data) => {
     const room = ludoRooms[socket.ludoRoom]; if (!room) return;
     const piece = room.pieces[data.tokenId]; if (!piece || piece.color !== room.turn) return;
@@ -310,7 +349,6 @@ io.on('connection', (socket) => {
     }
     io.to(socket.ludoRoom).emit('ludo-update', room);
   });
-
   socket.on('ludo-restart', (data) => {
      const room = ludoRooms[socket.ludoRoom]; if(room) {
          const firstAvailable = ludoColors.find(c => room.players[c]); room.turn = firstAvailable || 'red';
@@ -320,332 +358,7 @@ io.on('connection', (socket) => {
      }
   });
 
-  // --- DISCONNECT (With Grace Period) ---
-  socket.on('disconnect', () => {
-    // Clear voice presence immediately
-    for (let roomId in voiceRooms) {
-      const len = voiceRooms[roomId].length; 
-      voiceRooms[roomId] = voiceRooms[roomId].filter(u => u.id !== socket.id);
-      if (voiceRooms[roomId].length < len) socket.to(roomId).emit('voice-user-left', { id: socket.id });
-      if (voiceRooms[roomId].length === 0) delete voiceRooms[roomId];
-    }
-
-    if (socket.partyCode && parties[socket.partyCode]) {
-      const party = parties[socket.partyCode];
-      const leavingName = party.names && party.names[socket.id] || 'Someone';
-      
-      // Notify others immediately
-      socket.to(socket.partyCode).emit('user-left-msg', { id: socket.id, name: leavingName });
-      socket.to(socket.partyCode).emit('user-disconnected', { id: socket.id });
-
-      // Set a timeout to clean up room (10 seconds grace period)
-      // This allows the user to refresh without destroying the room immediately
-      disconnectTimeouts[socket.partyCode] = setTimeout(() => {
-        // Re-check if room still exists and if user really left
-        // (User might have reconnected in another tab/socket)
-        if (parties[socket.partyCode]) {
-             const p = parties[socket.partyCode];
-             p.users = p.users.filter(id => id !== socket.id);
-             delete p.names[socket.id];
-             if (p.hostSocketId === socket.id) p.hostSocketId = null;
-             
-             if (p.users.length === 0) {
-                delete parties[socket.partyCode];
-             }
-        }
-      }, 10000); // 10 seconds
-    }
-    
-    if (socket.gameRoomId && gameRooms[socket.gameRoomId]) { delete gameRooms[socket.gameRoomId]; io.to(socket.gameRoomId).emit('game-error', 'Opponent Disconnected'); }
-    if (socket.drawRoomId && drawRooms[socket.drawRoomId]) {
-        const room = drawRooms[socket.drawRoomId]; room.players = room.players.filter(p => p.id !== socket.id);
-        if (room.drawer && room.drawer.id === socket.id) {
-            if(room.timer) clearInterval(room.timer); io.to(socket.drawRoomId).emit('round-end', { word: room.word || '---', players: room.players, error: 'Drawer Left!' });
-             setTimeout(() => { if (room.players.length < 2) { io.to(socket.drawRoomId).emit('game-over', { players: room.players }); delete drawRooms[socket.drawRoomId]; } else { room.round++; startDrawRound(socket.drawRoomId); } }, 3000);
-        } else {
-             io.to(socket.drawRoomId).emit('draw-update', { players: room.players, drawer: room.drawer });
-             if (room.players.length < 2) { if(room.timer) clearInterval(room.timer); io.to(socket.drawRoomId).emit('draw-waiting', { players: room.players, message: 'Waiting for players...' }); room.status = 'waiting'; }
-        }
-    }
-    if (socket.ludoRoom && ludoRooms[socket.ludoRoom]) {
-        const room = ludoRooms[socket.ludoRoom];
-        for(let color of ludoColors) { if(room.players[color] && room.players[color].id === socket.id) room.players[color] = null; }
-        io.to(socket.ludoRoom).emit('ludo-error', 'A player disconnected.'); delete ludoRooms[socket.ludoRoom];
-    }
-  });
-
 });
 
 const PORT = process.env.PORT || 3000;
 http.listen(PORT, () => console.log(`Watch-Night Server running on port ${PORT}`));
-
-/* ══════════════════════════════════════════════════════════════════
-   VOICE MANAGER v5.0 — PeerJS (Free & Stable)
-   ══════════════════════════════════════════════════════════════════ */
-
-let voiceSocket;
-let myPeer = null;
-let myVoiceStream = null;
-const peers = {}; // Store call objects: peerId -> Call
-let isMuted = localStorage.getItem('voiceMuted') === 'true';
-let currentRoomId = null;
-let currentName = null;
-let isConnected = false;
-
-/* ── ICE Servers (Free OpenRelay for Long Distance) ── */
-const ICE_CONFIG = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        // Free TURN server for guaranteed connectivity
-        {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        }
-    ]
-};
-
-/* ── Init Voice System ── */
-function initVoiceSystem(socket) {
-    voiceSocket = socket;
-    socket.on('voice-users-list', handleUsersList);
-    socket.on('voice-user-joined', handleUserJoined);
-    socket.on('voice-user-left', handleUserLeft);
-    
-    // Load PeerJS Script
-    if (!document.getElementById('peerjs-script')) {
-        const script = document.createElement('script');
-        script.src = "https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js";
-        script.id = 'peerjs-script';
-        document.head.appendChild(script);
-    }
-}
-
-/* ── Start Voice ── */
-async function startVoice(roomId, name) {
-    if (isConnected) return;
-    
-    currentRoomId = roomId;
-    currentName = name;
-
-    // 1. Request Microphone
-    try {
-        myVoiceStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-        if (isMuted) myVoiceStream.getAudioTracks()[0].enabled = false;
-    } catch (err) {
-        showToast("Microphone access denied", "error");
-        console.error(err);
-        return;
-    }
-
-    // 2. Initialize PeerJS (Wait for script to load)
-    const checkInterval = setInterval(() => {
-        if (window.Peer) {
-            clearInterval(checkInterval);
-            createMyPeer();
-        }
-    }, 100);
-}
-
-function createMyPeer() {
-    // Create random ID
-    const myPeerId = 'wn_' + Math.random().toString(36).substr(2, 9);
-    
-    myPeer = new Peer(myPeerId, { config: ICE_CONFIG });
-
-    myPeer.on('open', (id) => {
-        console.log('[Voice] My Peer ID:', id);
-        
-        // Notify Server
-        voiceSocket.emit('join-voice', { 
-            roomId: currentRoomId, 
-            name: currentName, 
-            peerId: id 
-        });
-
-        isConnected = true;
-        if (!window.customMicUI) createVoiceOrb();
-        updateGlobalMicUI();
-    });
-
-    // 3. Handle Incoming Calls
-    myPeer.on('call', (call) => {
-        console.log('[Voice] Incoming call from', call.peer);
-        call.answer(myVoiceStream); // Answer with our stream
-        connectToCall(call);
-    });
-
-    myPeer.on('error', (err) => {
-        console.error('[Voice] Peer Error:', err);
-        if (err.type === 'peer-unavailable') {
-            // User might have left, ignore
-        } else {
-            showToast("Voice connection error", "error");
-        }
-    });
-}
-
-/* ── Handle Existing Users (I am the Caller) ── */
-function handleUsersList(users) {
-    console.log('[Voice] Existing users:', users);
-    users.forEach(user => {
-        callUser(user.peerId);
-    });
-}
-
-/* ── Handle New User Joined (Wait for their call) ── */
-function handleUserJoined(user) {
-    console.log('[Voice] User joined:', user.name);
-    showToast(`${user.name} joined voice`, 'success');
-    // We wait for their call (handled by myPeer.on('call'))
-    // But as a fallback, we can try to call them if they don't call us within 2s
-    setTimeout(() => {
-        if (!peers[user.peerId]) {
-            callUser(user.peerId);
-        }
-    }, 2000);
-}
-
-/* ── Call a User ── */
-function callUser(peerId) {
-    if (!myPeer || !myVoiceStream || peers[peerId]) return;
-    
-    console.log('[Voice] Calling', peerId);
-    const call = myPeer.call(peerId, myVoiceStream);
-    connectToCall(call);
-}
-
-/* ── Manage Call Connection ── */
-function connectToCall(call) {
-    if (peers[call.peer]) return; // Already connected
-
-    peers[call.peer] = call;
-
-    call.on('stream', (remoteStream) => {
-        console.log('[Voice] Received stream');
-        playAudioStream(call.peer, remoteStream);
-    });
-
-    call.on('close', () => {
-        console.log('[Voice] Call closed');
-        removeAudioStream(call.peer);
-        delete peers[call.peer];
-    });
-}
-
-/* ── Audio Playback Helpers ── */
-function playAudioStream(id, stream) {
-    let audio = document.getElementById(`audio-${id}`);
-    if (!audio) {
-        audio = document.createElement('audio');
-        audio.id = `audio-${id}`;
-        audio.autoplay = true;
-        document.body.appendChild(audio);
-    }
-    audio.srcObject = stream;
-    audio.play().catch(e => console.log("Autoplay blocked"));
-}
-
-function removeAudioStream(id) {
-    const audio = document.getElementById(`audio-${id}`);
-    if (audio) audio.remove();
-}
-
-/* ── Handle User Left ── */
-function handleUserLeft(data) {
-    console.log('[Voice] User left', data.id);
-    // Find the call associated with this socket ID? 
-    // Ideally we need a map socketId -> peerId.
-    // For now, we just clean up if we have the peer.
-    // Note: Server sends ID, PeerJS uses PeerID. 
-    // We need to ensure we close the right call.
-    // The server emit 'voice-user-left' currently sends socket.id.
-    // We need to improve this mapping or just let the WebRTC connection time out.
-    // Let's stick to robust cleanup: 
-    for (let peerId in peers) {
-        // We can't easily map socket.id to peerId here without server sending peerId.
-        // But 'voice-user-left' payload could be updated.
-        // Let's assume the connection closes naturally or via 'close' event.
-    }
-}
-
-/* ── Toggle Mic ── */
-function toggleVoiceMic() {
-    if (!isConnected) {
-        // If not connected, this click acts as "Start"
-        if (currentRoomId && currentName) {
-            startVoice(currentRoomId, currentName);
-        }
-        return;
-    }
-
-    isMuted = !isMuted;
-    if (myVoiceStream) {
-        myVoiceStream.getAudioTracks()[0].enabled = !isMuted;
-    }
-    localStorage.setItem('voiceMuted', isMuted);
-    updateGlobalMicUI();
-}
-
-/* ── Update UI ── */
-function updateGlobalMicUI() {
-    const orbBtn = document.getElementById('voice-btn');
-    const orbIcon = document.getElementById('mic-icon');
-    const orbLabel = document.getElementById('voice-label');
-    const orbPing = document.getElementById('voice-ping');
-    const localBtn = document.getElementById('localMicBtn');
-
-    // Disconnected
-    if (!isConnected) {
-        if (orbBtn) orbBtn.className = 'relative w-14 h-14 rounded-full bg-gray-700 flex items-center justify-center shadow-lg border-2 border-gray-600 hover:scale-110 transition-transform focus:outline-none';
-        if (orbIcon) orbIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>';
-        if (orbLabel) { orbLabel.innerText = 'Click to Join'; orbLabel.className = 'mt-1 text-[10px] text-gray-400 uppercase tracking-wider'; }
-        if (localBtn) localBtn.className = 'control-btn p-2 rounded-lg bg-gray-500/50';
-    } 
-    // Muted
-    else if (isMuted) {
-        if (orbBtn) orbBtn.className = 'relative w-14 h-14 rounded-full bg-gradient-to-tr from-red-600 to-red-500 flex items-center justify-center shadow-lg border-2 border-red-400/50 hover:scale-110 transition-transform focus:outline-none';
-        if (orbIcon) orbIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>';
-        if (orbLabel) { orbLabel.innerText = 'Muted'; orbLabel.className = 'mt-1 text-[10px] text-red-400 uppercase tracking-wider'; }
-        if (localBtn) localBtn.className = 'control-btn p-2 rounded-lg bg-red-500/50';
-    } 
-    // Active
-    else {
-        if (orbBtn) orbBtn.className = 'relative w-14 h-14 rounded-full bg-gradient-to-tr from-green-500 to-teal-400 flex items-center justify-center shadow-lg border-2 border-white/20 hover:scale-110 transition-transform focus:outline-none';
-        if (orbIcon) orbIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>';
-        if (orbLabel) { orbLabel.innerText = 'Connected'; orbLabel.className = 'mt-1 text-[10px] text-gray-400 uppercase tracking-wider'; }
-        if (localBtn) localBtn.className = 'control-btn p-2 rounded-lg';
-    }
-}
-
-function createVoiceOrb() {
-  if (document.getElementById('voice-orb')) return;
-  const ui = document.createElement('div');
-  ui.id = 'voice-orb';
-  ui.className = 'fixed bottom-5 right-5 z-[9999] flex flex-col items-center';
-  ui.innerHTML = `
-    <div class="relative">
-      <div id="voice-ping" class="absolute inset-0 rounded-full bg-green-500 opacity-30"></div>
-      <button onclick="toggleVoiceMic()" id="voice-btn" class="relative w-14 h-14 rounded-full bg-gray-700 flex items-center justify-center shadow-lg border-2 border-gray-600 hover:scale-110 transition-transform focus:outline-none">
-        <svg id="mic-icon" class="w-6 h-6 text-white drop-shadow-lg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
-      </button>
-    </div>
-    <span id="voice-label" class="mt-1 text-[10px] text-gray-400 uppercase tracking-wider">Click to Join</span>
-  `;
-  document.body.appendChild(ui);
-  updateGlobalMicUI();
-}
-
-function stopVoice() {
-    if (myPeer) myPeer.destroy();
-    myPeer = null;
-    isConnected = false;
-    myVoiceStream = null;
-    updateGlobalMicUI();
-}
