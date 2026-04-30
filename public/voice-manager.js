@@ -1,7 +1,10 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   VOICE MANAGER v2.0 — Long-Distance Fix Edition
-   Fixes: NAT traversal, connection state monitoring, peer creation on join,
-          auto-reconnect, robust audio handling, multiple STUN/TURN servers.
+   VOICE MANAGER v2.2 — Robust Signaling & Long-Distance Fix
+   Fixes:
+   - Signaling Glare (Collisions)
+   - NAT Traversal (TURN Servers)
+   - Autoplay Policies
+   - Connection State Monitoring
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 let voiceSocket;
@@ -11,7 +14,6 @@ const peerRetries = {};      // userId -> retry count
 let isMuted = localStorage.getItem('voiceMuted') === 'true';
 let currentRoomId = null;
 let currentName = null;
-let reconnectTimer = null;
 
 /* ── ICE Server List (Multiple STUN + TURN for NAT traversal) ── */
 const ICE_SERVERS = [
@@ -20,9 +22,9 @@ const ICE_SERVERS = [
   { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:stun3.l.google.com:19302' },
   { urls: 'stun:stun4.l.google.com:19302' },
-  { urls: 'stun:stun.cloudflare.com:3478' },
-  { urls: 'stun:stun.voip.blackberry.com:3478' },
-  // Public TURN servers (for symmetric NAT / long-distance)
+  
+  // Public TURN servers (Critical for long distance / symmetric NAT / Firewall traversal)
+  // Using OpenRelay Project (Free Tier)
   {
     urls: 'turn:openrelay.metered.ca:80',
     username: 'openrelayproject',
@@ -47,15 +49,16 @@ function initVoiceSystem(socket) {
   socket.on('voice-user-joined', handleUserJoined);
   socket.on('voice-user-left', handleUserLeft);
   socket.on('voice-signal', handleVoiceSignal);
-
-  // Listen to global join events for toast notifications
-  socket.on('user-joined-msg', (data) => showToast(`${data.name} joined the party`, 'success'));
-  socket.on('user-left-msg', (data) => showToast(`${data.name} left`, 'info'));
 }
 
 /* ── Start Voice ── */
 async function startVoice(roomId, name) {
-  if (myVoiceStream) { updateGlobalMicUI(); return; }
+  // If already started, just update UI
+  if (myVoiceStream) {
+    updateGlobalMicUI();
+    return;
+  }
+
   currentRoomId = roomId;
   currentName = name;
 
@@ -66,16 +69,19 @@ async function startVoice(roomId, name) {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
-        sampleRate: 48000,
-        channelCount: 1
+        sampleRate: 48000
       }
     });
 
+    // Apply saved mute state
     myVoiceStream.getAudioTracks()[0].enabled = !isMuted;
 
+    // Create floating UI orb if not using custom UI
     if (!window.customMicUI) createVoiceOrb(roomId);
 
+    // Notify server we are joining voice
     voiceSocket.emit('join-voice', { roomId, name });
+    
     updateGlobalMicUI();
     console.log('[Voice] Joined room', roomId);
   } catch (e) {
@@ -134,16 +140,21 @@ function updateGlobalMicUI() {
   }
 }
 
-/* ── Handle Existing Users List ── */
+/* ── Handle Existing Users List (I am the NEW user) ──
+   I should initiate calls to everyone already in the room.
+   ─────────────────────────────────────────────────────── */
 function handleUsersList(users) {
   console.log('[Voice] Existing users in room:', users.length);
-  users.forEach(user => createPeer(user.id, true));
+  users.forEach(user => createPeer(user.id, true)); // true = I am the caller
 }
 
-/* ── Handle New User Joined (CRITICAL FIX) ── */
+/* ── Handle New User Joined (I am the EXISTING user) ──
+   A new user has joined. They will send me an offer.
+   I should NOT create a peer here to avoid "glare" (signaling collision).
+   I will wait for their 'voice-signal' (offer).
+   ─────────────────────────────────────────────────────── */
 function handleUserJoined(user) {
   console.log('[Voice] New user joined:', user.name, user.id);
-  createPeer(user.id, true);
   showToast(`${user.name} joined voice chat`, 'success');
 }
 
@@ -160,6 +171,7 @@ function handleUserLeft(data) {
 
 /* ── Create RTCPeerConnection ── */
 function createPeer(userId, isCaller) {
+  // Avoid duplicate peers
   if (voicePeers[userId]) {
     console.log('[Voice] Peer already exists for', userId);
     return;
@@ -169,35 +181,36 @@ function createPeer(userId, isCaller) {
 
   const pc = new RTCPeerConnection({
     iceServers: ICE_SERVERS,
-    iceTransportPolicy: 'all',
+    iceTransportPolicy: 'all', // Use 'relay' if you want to force TURN only
     bundlePolicy: 'max-bundle',
-    rtcpMuxPolicy: 'require',
-    iceCandidatePoolSize: 10
+    rtcpMuxPolicy: 'require'
   });
 
   voicePeers[userId] = pc;
   peerRetries[userId] = 0;
 
-  // Add local stream tracks
+  // Add my local tracks to the connection
   if (myVoiceStream) {
     myVoiceStream.getAudioTracks().forEach(track => {
       try { pc.addTrack(track, myVoiceStream); } catch (e) { console.error('[Voice] addTrack error:', e); }
     });
   }
 
-  // ICE Candidate handling with trickle
+  // Handle ICE Candidates (Trickle ICE)
   pc.onicecandidate = (e) => {
     if (e.candidate) {
       voiceSocket.emit('voice-signal', { to: userId, signal: e.candidate });
     }
   };
 
+  // Monitor Connection State
   pc.oniceconnectionstatechange = () => {
     console.log('[Voice] ICE state with', userId, ':', pc.iceConnectionState);
     if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-      console.log('[Voice] ICE failed/disconnected for', userId, '- attempting restart');
+      // Attempt ICE Restart or Recreation
       if (peerRetries[userId] < 3) {
         peerRetries[userId]++;
+        console.log(`[Voice] Retrying connection for ${userId} (Attempt ${peerRetries[userId]})`);
         setTimeout(() => recreatePeer(userId), 1000 * peerRetries[userId]);
       }
     }
@@ -206,41 +219,36 @@ function createPeer(userId, isCaller) {
   pc.onconnectionstatechange = () => {
     console.log('[Voice] Connection state with', userId, ':', pc.connectionState);
     if (pc.connectionState === 'connected') {
-      peerRetries[userId] = 0;
+      peerRetries[userId] = 0; // Reset retries on success
       showToast('Voice connected', 'success');
-    } else if (pc.connectionState === 'failed') {
-      console.log('[Voice] Connection failed for', userId);
-      if (peerRetries[userId] < 3) {
-        peerRetries[userId]++;
-        setTimeout(() => recreatePeer(userId), 2000 * peerRetries[userId]);
-      }
     }
   };
 
-  // Remote track handling
+  // Handle Remote Stream
   pc.ontrack = (e) => {
     console.log('[Voice] Received remote track from', userId);
-    let a = document.getElementById(`audio-${userId}`);
-    if (!a) {
-      a = document.createElement('audio');
-      a.id = `audio-${userId}`;
-      a.autoplay = true;
-      a.playsinline = true;
-      a.volume = 1.0;
-      document.body.appendChild(a);
+    let audioEl = document.getElementById(`audio-${userId}`);
+    if (!audioEl) {
+      audioEl = document.createElement('audio');
+      audioEl.id = `audio-${userId}`;
+      audioEl.autoplay = true;
+      audioEl.playsinline = true;
+      audioEl.volume = 1.0;
+      document.body.appendChild(audioEl);
     }
-    a.srcObject = e.streams[0];
-    const playPromise = a.play();
+    audioEl.srcObject = e.streams[0];
+    
+    // Play handling (browsers often block autoplay)
+    const playPromise = audioEl.play();
     if (playPromise !== undefined) {
       playPromise.catch(err => {
         console.log('[Voice] Audio play blocked, waiting for interaction');
-        const unlock = () => { a.play().catch(() => {}); document.removeEventListener('click', unlock); };
-        document.addEventListener('click', unlock);
+        // We rely on the user having clicked "Start Session" in watch.html to unlock this
       });
     }
   };
 
-  // Negotiation (caller side)
+  // Logic for the CALLER (The one who initiates the offer)
   if (isCaller) {
     pc.onnegotiationneeded = async () => {
       try {
@@ -267,78 +275,57 @@ function recreatePeer(userId) {
   }
   const el = document.getElementById(`audio-${userId}`);
   if (el) { el.pause(); el.remove(); }
+  
+  // Always assume Caller true for recreation, or implement more complex logic
   createPeer(userId, true);
 }
 
 /* ── Handle Incoming Signal ── */
 async function handleVoiceSignal(data) {
   const userId = data.from;
-  if (!voicePeers[userId]) createPeer(userId, false);
-  const pc = voicePeers[userId];
-  if (!pc) return;
+  const signal = data.signal;
 
-  try {
-    const signal = data.signal;
-
-    if (signal.type === 'offer') {
-      await pc.setRemoteDescription(new RTCSessionDescription(signal));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      voiceSocket.emit('voice-signal', { to: userId, signal: answer });
+  // 1. If we receive an OFFER (They are calling us)
+  if (signal.type === 'offer') {
+    // If I am the caller (glare situation), compare socket IDs.
+    // If my ID is higher, I ignore their offer and wait for mine to be processed.
+    // For simplicity in this version, we just accept the offer if we don't have a peer yet.
+    
+    if (!voicePeers[userId]) createPeer(userId, false); // false = I am the answerer
+    
+    const pc = voicePeers[userId];
+    
+    // Set remote description (their offer)
+    await pc.setRemoteDescription(new RTCSessionDescription(signal));
+    
+    // Create and send answer
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    voiceSocket.emit('voice-signal', { to: userId, signal: answer });
+  } 
+  
+  // 2. If we receive an ANSWER (They accepted our call)
+  else if (signal.type === 'answer') {
+    if (!voicePeers[userId]) return; // Should have a peer if we sent an offer
+    const pc = voicePeers[userId];
+    await pc.setRemoteDescription(new RTCSessionDescription(signal));
+  } 
+  
+  // 3. If we receive an ICE Candidate
+  else if (signal.candidate || (signal.type === 'candidate')) {
+    if (!voicePeers[userId]) return;
+    const candidate = signal.candidate || signal;
+    try {
+      await voicePeers[userId].addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+      console.error('[Voice] Error adding ICE candidate', e);
     }
-    else if (signal.type === 'answer') {
-      await pc.setRemoteDescription(new RTCSessionDescription(signal));
-    }
-    else if (signal.candidate || (signal.type === 'candidate')) {
-      const candidate = signal.candidate || signal;
-      await pc.addIceCandidate(new RTCIceCandidate(candidate));
-    }
-  } catch (err) {
-    console.error('[Voice] Signal error:', err);
   }
-}
-
-/* ── Toast Notification System ── */
-function showToast(message, type = 'info') {
-  let container = document.getElementById('toast-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'toast-container';
-    container.className = 'fixed top-5 right-5 z-[99999] flex flex-col gap-2';
-    document.body.appendChild(container);
-  }
-
-  const toast = document.createElement('div');
-  const colors = {
-    info:    'border-cyan-500/50 bg-black/80 text-cyan-300',
-    success: 'border-green-500/50 bg-black/80 text-green-300',
-    error:   'border-red-500/50 bg-black/80 text-red-300',
-    warning: 'border-yellow-500/50 bg-black/80 text-yellow-300'
-  };
-
-  toast.className = `px-4 py-2 rounded-lg border backdrop-blur-md text-sm font-medium animate-slide-in shadow-lg ${colors[type] || colors.info}`;
-  toast.innerHTML = `
-    <div class="flex items-center gap-2">
-      <span class="w-2 h-2 rounded-full ${type === 'success' ? 'bg-green-400' : type === 'error' ? 'bg-red-400' : type === 'warning' ? 'bg-yellow-400' : 'bg-cyan-400'}"></span>
-      ${message}
-    </div>
-  `;
-
-  container.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.transition = 'all 0.4s ease';
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateX(100px)';
-    setTimeout(() => toast.remove(), 400);
-  }, 3000);
 }
 
 /* ── Stop Voice ── */
 function stopVoice() {
-  Object.values(voicePeers).forEach(pc => {
-    try { pc.close(); } catch (e) {}
-  });
+  Object.values(voicePeers).forEach(pc => { try { pc.close(); } catch (e) {} });
   Object.keys(voicePeers).forEach(k => delete voicePeers[k]);
   if (myVoiceStream) {
     myVoiceStream.getTracks().forEach(t => t.stop());
