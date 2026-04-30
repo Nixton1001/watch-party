@@ -59,8 +59,8 @@
     
     /* Interaction Overlay (Fixes Voice & Autoplay) */
     #interaction-overlay { 
-        position: fixed; inset: 0; z-index: 60; 
-        background: rgba(0,0,0,0.85); 
+        position: fixed; inset: 0; z-index: 9990; /* High z-index to ensure clickability */
+        background: rgba(0,0,0,0.9); 
         display: flex; flex-direction: column; 
         align-items: center; justify-content: center; 
         cursor: pointer; 
@@ -84,14 +84,14 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <!-- INTERACTION OVERLAY (Required to start Voice & Video) -->
+  <!-- INTERACTION OVERLAY -->
   <div id="interaction-overlay" class="hidden">
       <div class="pulse-ring"></div>
-      <div class="relative z-10 text-center p-8 glass rounded-2xl border border-white/10">
+      <div class="relative z-10 text-center p-8 glass rounded-2xl border border-white/10" onclick="handleUserInteraction()">
           <div class="text-6xl mb-4">&#127909;</div>
           <h2 class="text-2xl font-bold mb-2" style="font-family: 'Orbitron'">Ready to Join?</h2>
-          <p class="text-gray-400 mb-4">Click anywhere to enable Voice & Video</p>
-          <button class="neon-btn px-8 py-3 rounded-lg text-lg">Start Session</button>
+          <p class="text-gray-400 mb-4">Click to enable Voice & Video</p>
+          <button class="neon-btn px-8 py-3 rounded-lg text-lg pointer-events-none">Start Session</button>
       </div>
   </div>
 
@@ -123,7 +123,6 @@
      <div class="text-6xl mb-4">&#9203;</div>
      <h2 class="text-2xl font-bold text-gray-300 waiting-text">Waiting for Host...</h2>
      <p class="text-gray-500 mt-2">The host has not started the stream yet.</p>
-     <div class="mt-4 text-xs text-gray-600">Voice Chat will activate automatically</div>
   </div>
 
   <!-- WELCOME POPUP -->
@@ -242,28 +241,32 @@
         } catch (e) { console.error("Audio Boost Error:", e); }
     }
 
-    // --- MAIN INTERACTION HANDLER (Fixes Voice & Autoplay) ---
+    // --- MAIN INTERACTION HANDLER ---
     async function handleUserInteraction() {
         if (interactionOverlay.classList.contains('hidden')) return;
         
         interactionOverlay.classList.add('hidden');
-        
-        // 1. Init Audio
         initAudioBooster();
 
-        // 2. Start Voice (Requires click gesture)
+        // Start Voice
         if (!voiceStarted && currentRoomId) {
             startVoice(currentRoomId, myName);
             voiceStarted = true;
         }
 
-        // 3. Try playing video if source exists
+        // Try playing video
         if (video.src) {
             video.play().catch(e => console.log("Play deferred"));
         }
     }
 
-    interactionOverlay.addEventListener('click', handleUserInteraction);
+    // Global click listener for fallback
+    document.body.addEventListener('click', () => {
+        // If overlay is supposed to be shown but user clicked elsewhere, try to trigger it
+        if (!interactionOverlay.classList.contains('hidden')) {
+            handleUserInteraction();
+        }
+    });
 
     window.onload = async () => {
       if(!partyCode) window.location.href = '/';
@@ -285,7 +288,6 @@
       isHost = data.isHost;
       currentRoomId = data.roomId;
       
-      // Show interaction overlay immediately to request click for Voice
       interactionOverlay.classList.remove('hidden');
 
       if (isHost) {
@@ -296,8 +298,6 @@
           else { 
               document.getElementById('hostSetupModal').classList.remove('hidden'); 
               document.getElementById('hostDisplayCode').innerText = partyCode; 
-              // Hide overlay until upload happens, but we need interaction for voice
-              // Keep overlay or handle interaction on upload button
           }
       } else {
           if(data.welcomeMsg) { document.getElementById('welcomeText').innerText = data.welcomeMsg; document.getElementById('welcomeModal').classList.remove('hidden'); }
@@ -307,7 +307,7 @@
           }
           else { 
               document.getElementById('guestWaitingScreen').classList.remove('hidden');
-              interactionOverlay.classList.add('hidden'); // Don't show interaction overlay if waiting for host
+              interactionOverlay.classList.add('hidden'); 
           }
       }
     });
@@ -323,7 +323,6 @@
         video.src = url; 
         socket.emit('sync-video', { type: 'src', src: url });
         document.getElementById('hostSetupModal').classList.add('hidden');
-        // Ensure interaction overlay is shown if not clicked yet
         if (interactionOverlay.classList.contains('hidden')) interactionOverlay.classList.remove('hidden');
     }
 
@@ -340,7 +339,6 @@
                     socket.emit('sync-video', { type: 'src', src: data.filePath }); 
                     document.getElementById('hostSetupModal').classList.add('hidden'); 
                     showToast('Video uploaded!', 'success');
-                    // Ensure interaction overlay is shown
                     if (interactionOverlay.classList.contains('hidden')) interactionOverlay.classList.remove('hidden');
                 }
             } catch(e) { showToast('Upload failed', 'error'); }
@@ -356,12 +354,11 @@
       if(data.type === 'src') { 
           video.src = data.src; 
           document.getElementById('guestWaitingScreen').classList.add('hidden');
-          interactionOverlay.classList.remove('hidden'); // Show overlay to start
+          interactionOverlay.classList.remove('hidden');
           startUltraSync(); 
       }
       else if(data.type === 'play') { 
           if (!isBuffering && Math.abs(video.currentTime - data.time) > 3) video.currentTime = data.time; 
-          // Only play if overlay is gone (user clicked)
           if (interactionOverlay.classList.contains('hidden')) video.play().catch(e => {});
       }
       else if(data.type === 'pause') { video.currentTime = data.time || video.currentTime; video.pause(); }
