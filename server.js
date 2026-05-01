@@ -162,7 +162,6 @@ io.on('connection', (socket) => {
       socket.to(socket.partyCode).emit('user-left-msg', { id: socket.id, name: leavingName });
       socket.to(socket.partyCode).emit('user-disconnected', { id: socket.id });
       
-      // Grace period
       disconnectTimeouts[socket.id] = setTimeout(() => {
         if (parties[socket.partyCode]) {
              const p = parties[socket.partyCode];
@@ -302,7 +301,7 @@ io.on('connection', (socket) => {
   // ==========================================
   const ludoColors = ['red', 'green', 'yellow', 'blue'];
   
-  // Helper to get absolute position on 0-51 main track
+  // Helper to get absolute position on 0-51 main track for capture logic
   function getAbsPos(color, pos) {
     if (pos === 'home' || pos === 'finished') return -1;
     const offsets = { red: 0, green: 13, yellow: 26, blue: 39 };
@@ -340,7 +339,8 @@ io.on('connection', (socket) => {
     const playerCount = Object.values(room.players).filter(p => p !== null).length;
     if(playerCount >= 2) {
         if(!room.active) { const firstAvailable = ludoColors.find(c => room.players[c]); room.turn = firstAvailable; room.active = true; }
-        io.to(roomId).emit('ludo-state', room);
+        // FIX: Emit 'ludo-update' to match client listener
+        io.to(roomId).emit('ludo-update', room);
     } else {
         io.to(roomId).emit('ludo-waiting', { count: playerCount });
     }
@@ -405,7 +405,8 @@ io.on('connection', (socket) => {
         // Capture Logic
         if (piece.pos !== 'finished' && piece.pos !== 'home') {
             const myAbs = getAbsPos(piece.color, piece.pos);
-            const safeSpots = [0, 8, 13, 21, 26, 34, 39, 47]; // Stars and Starts
+            // Safe spots: Starts (0) and Stars (approx indices 8, 13, 21, 26, 34, 39, 47)
+            const safeSpots = [0, 8, 13, 21, 26, 34, 39, 47];
             if (!safeSpots.includes(myAbs)) {
                 for (let key in room.pieces) {
                     const p = room.pieces[key];
