@@ -326,10 +326,37 @@ io.on('connection', (socket) => {
     const room = ludoRooms[roomId];
     let assignedColor = null;
 
-    // Reconnection logic
-    for (let color of ludoColors) { if (room.players[color] && room.players[color].uid === uid) { room.players[color].id = socket.id; assignedColor = color; break; } }
-    // New join logic
-    if (!assignedColor) { for (let color of ludoColors) { if (room.players[color] === null) { room.players[color] = { id: socket.id, name, uid }; assignedColor = color; break; } } }
+    // 1. Check Reconnection (Same UID)
+    for (let color of ludoColors) {
+      if (room.players[color] && room.players[color].uid === uid) {
+        // Found UID match. Check if the existing socket is still active.
+        const existingSocketId = room.players[color].id;
+        // Check if socket is still connected
+        if (io.sockets.sockets.get(existingSocketId)) {
+          // Socket is active! This is a duplicate tab/login. 
+          // Do NOT take over this slot. Force new slot assignment below.
+          // console.log(`Duplicate UID ${uid} detected. Assigning new slot.`);
+          break; 
+        } else {
+          // Socket gone (disconnect). Reconnect this slot.
+          room.players[color].id = socket.id;
+          room.players[color].name = name; // Update name just in case
+          assignedColor = color;
+          break;
+        }
+      }
+    }
+
+    // 2. Assign New Slot (If not reconnected)
+    if (!assignedColor) { 
+      for (let color of ludoColors) { 
+        if (room.players[color] === null) { 
+          room.players[color] = { id: socket.id, name, uid }; 
+          assignedColor = color; 
+          break; 
+        } 
+      } 
+    }
     
     if (!assignedColor) return socket.emit('ludo-error', 'Game Full');
     
