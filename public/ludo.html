@@ -78,6 +78,7 @@
     .toast-item { padding: 10px 18px; border-radius: 10px; font-size: 0.875rem; font-weight: 500; backdrop-filter: blur(10px); border-left: 3px solid; animation: slideIn 0.4s ease; }
     .toast-success { background: rgba(0,0,0,0.8); color: #4ade80; border-color: #4ade80; }
     .toast-error { background: rgba(0,0,0,0.8); color: #f87171; border-color: #f87171; }
+    .toast-info { background: rgba(0,0,0,0.8); color: #22d3ee; border-color: #22d3ee; }
   </style>
 </head>
 <body class="flex flex-col items-center justify-center min-h-screen">
@@ -133,6 +134,7 @@
     const socket = io();
     const partyCode = localStorage.getItem('partyCode');
     const myName = localStorage.getItem('watchNightName');
+    const myUid = localStorage.getItem('watchNightUid');
     let myColor = null;
     let currentGameState = {};
 
@@ -145,7 +147,7 @@
       t.className = `toast-item toast-${type}`;
       t.innerText = message;
       c.appendChild(t);
-      setTimeout(() => t.remove(), 3000);
+      setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 3000);
     }
 
     /* --- Board Generation --- */
@@ -169,45 +171,134 @@
                 if(r>5 && r<9 && c>5 && c<9) cell.classList.add('center-cell');
 
                 // Path Coloring Logic
-                // This is simplified visual logic. Real logic handled by PATH array.
-                // White path cells
                 if( (r === 6 || r === 8) && (c < 6 || c > 8) ) cell.classList.add('path-cell');
                 if( (c === 6 || c === 8) && (r < 6 || r > 8) ) cell.classList.add('path-cell');
-                if( r === 7 || c === 7 ) {
-                    // Center cross logic
-                     if( (r===7 && c!==7) || (c===7 && r!==7) ) {
-                         // Home stretches
-                         if(c < 6) cell.classList.add('path-cell', 'hs-red');
-                         if(c > 8) cell.classList.add('path-cell', 'hs-yellow');
-                         if(r < 6) cell.classList.add('path-cell', 'hs-green');
-                         if(r > 8) cell.classList.add('path-cell', 'hs-blue');
-                     }
-                }
                 
-                // Safe Stars (Simplified positions)
-                if((r===2 && c===6) || (r===6 && c===2) || (r===6 && c===12) || (r===12 && c===6) ||
-                   (r===2 && c===8) || (r===8 && c===2) || (r===8 && c===12) || (r===12 && c===8)) {
-                    // Note: Standard safe spots are usually the start squares + stars
-                }
+                // Home Stretches (Colored paths to center)
+                if(r === 7 && c > 0 && c < 6) cell.classList.add('path-cell', 'hs-red');
+                if(c === 7 && r > 0 && r < 6) cell.classList.add('path-cell', 'hs-green');
+                if(r === 7 && c > 8 && c < 14) cell.classList.add('path-cell', 'hs-yellow');
+                if(c === 7 && r > 8 && r < 14) cell.classList.add('path-cell', 'hs-blue');
                 
-                // Start Positions Visuals
-                if(r===6 && c===1) { cell.classList.add('path-cell', 'start-red'); cell.innerHTML = '<span style="font-size:10px;opacity:0.5">START</span>' }
-                if(r===1 && c===8) { cell.classList.add('path-cell', 'start-green'); cell.innerHTML = '<span style="font-size:10px;opacity:0.5">START</span>' }
-                if(r===8 && c===13) { cell.classList.add('path-cell', 'start-yellow'); cell.innerHTML = '<span style="font-size:10px;opacity:0.5">START</span>' }
-                if(r===13 && c===6) { cell.classList.add('path-cell', 'start-blue'); cell.innerHTML = '<span style="font-size:10px;opacity:0.5">START</span>' }
+                // Start Positions Visuals (The first step outside home)
+                if(r===6 && c===1) { cell.classList.add('path-cell', 'start-red'); }
+                if(r===1 && c===8) { cell.classList.add('path-cell', 'start-green'); }
+                if(r===8 && c===13) { cell.classList.add('path-cell', 'start-yellow'); }
+                if(r===13 && c===6) { cell.classList.add('path-cell', 'start-blue'); }
 
                 board.appendChild(cell);
             }
         }
     }
     
+    /* --- Coordinate Mapping --- */
+    // We need to map server index (0-57) to [Row, Col] grid coordinates.
+    // Server Logic: Red starts at 0, Green at 13, Yellow at 26, Blue at 39.
+    // Red Home Stretch is 51-56.
+    
+    const PATH_MAP = { red: [], green: [], yellow: [], blue: [] };
+    
+    function initPaths() {
+        // Main track coordinates (0-51) assuming Red Start is [6,1] and goes clockwise
+        const mainPath = [
+            [6,1],[6,2],[6,3],[6,4],[6,5], // Red exit side
+            [5,6],[4,6],[3,6],[2,6],[1,6],[0,6], // Top side left
+            [0,7], // Top middle
+            [0,8],[1,8],[2,8],[3,8],[4,8],[5,8], // Top side right (Green exit approach)
+            [6,9],[6,10],[6,11],[6,12],[6,13], // Right side top
+            [7,14], // Right middle
+            [8,13],[8,12],[8,11],[8,10],[8,9], // Right side bottom (Yellow exit approach)
+            [9,8],[10,8],[11,8],[12,8],[13,8],[14,8], // Bottom side right
+            [14,7], // Bottom middle
+            [14,6],[13,6],[12,6],[11,6],[10,6],[9,6], // Bottom side left (Blue exit approach)
+            [8,5],[8,4],[8,3],[8,2],[8,1], // Left side bottom
+            [7,0], // Left middle
+            [6,0] // Left side top (Red re-entry to home stretch? No, usually red home stretch is separate)
+        ];
+        // Note: The main track loops. Index 51 connects to 0.
+        
+        // Red Home Stretch (Indices 51-56 for Red) -> Row 7, Cols 1-6
+        // But in our mainPath above, index 51 is [6,0].
+        // Red enters home at [7,1]. 
+        // We need to map carefully based on server logic.
+        // Server: 0-50 is main loop. 51-56 is home stretch. 57 is finished.
+        
+        // Let's redefine based on server offsets.
+        // Red Offset 0.
+        // Red 0 = [6,1]. Red 1 = [6,2] ... Red 5 = [6,5].
+        // Red 6 = [5,6] ... Red 11 = [0,6].
+        // Red 12 = [0,7].
+        // Red 13 = [0,8] (This is Green's start). Correct.
+        
+        // So mainPath array above corresponds exactly to Red's perspective 0-51.
+        PATH_MAP.red = [...mainPath];
+        // Red Home Stretch (51-56): Needs to enter center.
+        // Red enters from left? No, Red home is Top-Left. Red approaches from bottom of home column? No.
+        // Standard Ludo: Red finishes by moving up the center column?
+        // Wait, usually Red moves clockwise.
+        // Red Start: [6,1]. Moves Right.
+        // ...
+        // Red End of Loop (Index 50): Should be just before entering home stretch.
+        // Red Index 51 (Home Stretch Start): [7,1].
+        // Red Index 56 (Home Stretch End): [7,6].
+        // Red Index 57 (Finished): [7,7].
+        PATH_MAP.red[51] = [7,1];
+        PATH_MAP.red[52] = [7,2];
+        PATH_MAP.red[53] = [7,3];
+        PATH_MAP.red[54] = [7,4];
+        PATH_MAP.red[55] = [7,5];
+        PATH_MAP.red[56] = [7,6];
+        PATH_MAP.red[57] = [7,7]; // Center
+
+        // Green Offset 13.
+        // Green 0 corresponds to mainPath[13] -> [0,8].
+        // Green Home Stretch: Col 7, Rows 1-6.
+        const gStart = mainPath.slice(13).concat(mainPath.slice(0, 13));
+        PATH_MAP.green = [...gStart];
+        PATH_MAP.green[51] = [1,7];
+        PATH_MAP.green[52] = [2,7];
+        PATH_MAP.green[53] = [3,7];
+        PATH_MAP.green[54] = [4,7];
+        PATH_MAP.green[55] = [5,7];
+        PATH_MAP.green[56] = [6,7];
+        PATH_MAP.green[57] = [7,7];
+
+        // Yellow Offset 26.
+        // Yellow 0 corresponds to mainPath[26] -> [8,13].
+        // Yellow Home Stretch: Row 7, Cols 13-8.
+        const yStart = mainPath.slice(26).concat(mainPath.slice(0, 26));
+        PATH_MAP.yellow = [...yStart];
+        PATH_MAP.yellow[51] = [7,13];
+        PATH_MAP.yellow[52] = [7,12];
+        PATH_MAP.yellow[53] = [7,11];
+        PATH_MAP.yellow[54] = [7,10];
+        PATH_MAP.yellow[55] = [7,9];
+        PATH_MAP.yellow[56] = [7,8];
+        PATH_MAP.yellow[57] = [7,7];
+
+        // Blue Offset 39.
+        // Blue 0 corresponds to mainPath[39] -> [13,6].
+        // Blue Home Stretch: Col 7, Rows 13-8.
+        const bStart = mainPath.slice(39).concat(mainPath.slice(0, 39));
+        PATH_MAP.blue = [...bStart];
+        PATH_MAP.blue[51] = [13,7];
+        PATH_MAP.blue[52] = [12,7];
+        PATH_MAP.blue[53] = [11,7];
+        PATH_MAP.blue[54] = [10,7];
+        PATH_MAP.blue[55] = [9,7];
+        PATH_MAP.blue[56] = [8,7];
+        PATH_MAP.blue[57] = [7,7];
+    }
+    
+    initPaths();
+    createBoard();
+
     /* --- Game Logic --- */
     
     window.onload = () => {
-        createBoard();
         initVoiceSystem(socket);
-        socket.emit('join-party', { roomId: partyCode, name: myName, uid: localStorage.getItem('watchNightUid') });
-        socket.emit('join-ludo', { roomId: partyCode, name: myName });
+        socket.emit('join-party', { roomId: partyCode, name: myName, uid: myUid });
+        socket.emit('join-ludo', { roomId: partyCode, name: myName, uid: myUid });
     };
 
     socket.on('party-joined', (d) => startVoice(d.roomId, myName));
@@ -217,22 +308,31 @@
         document.getElementById('gameContainer').classList.remove('hidden');
         
         currentGameState = data;
+        
+        // Identify my color
+        if(!myColor) {
+            for(let color in data.players) {
+                if(data.players[color] && data.players[color].id === socket.id) {
+                    myColor = color;
+                    break;
+                }
+            }
+        }
+
         renderPlayers(data.players);
-        renderTokens(data.state);
+        renderTokens(data.pieces);
         updateTurnUI(data.turn, data.dice);
+    });
+
+    socket.on('ludo-waiting', (data) => {
+        document.getElementById('playerCountText').innerText = `Players: ${data.count}`;
     });
 
     socket.on('ludo-toast', (d) => showToast(d.msg, d.type));
 
-    socket.on('ludo-dice', (data) => {
-        currentGameState = data; // Update local state copy
-        setDice(data.dice);
-        
-        // If it's my turn and I rolled, check if I need to highlight tokens
-        const me = currentGameState.players.find(p => p.id === socket.id);
-        if(me && me.color === data.player) {
-            highlightMoves(me.color, data.dice);
-        }
+    socket.on('ludo-error', (msg) => {
+        showToast(msg, 'error');
+        setTimeout(() => window.location.href = '/', 3000);
     });
 
     socket.on('ludo-winner', (data) => {
@@ -241,151 +341,128 @@
         document.getElementById('winner-overlay').style.display = 'flex';
     });
 
-    function renderPlayers(players) {
+    function renderPlayers(playersObj) {
         const colors = ['red', 'green', 'yellow', 'blue'];
         colors.forEach(c => {
             const el = document.getElementById(`p-${c}`);
-            const p = players.find(x => x.color === c);
+            const p = playersObj[c];
+            
             if(p) {
                 el.style.opacity = 1;
                 el.querySelector('span:first-child').innerText = p.name;
                 el.querySelector('span:last-child').innerText = p.id === socket.id ? '(You)' : '';
             } else {
                 el.style.opacity = 0.4;
+                el.querySelector('span:first-child').innerText = c.charAt(0).toUpperCase() + c.slice(1);
+                el.querySelector('span:last-child').innerText = 'Waiting...';
             }
         });
     }
 
-    function renderTokens(state) {
+    function renderTokens(piecesObj) {
         // Clear existing tokens
         document.querySelectorAll('.token').forEach(t => t.remove());
 
-        for(let color in state) {
-            const positions = state[color];
-            positions.forEach((posIndex, tokenIdx) => {
-                if(posIndex === -1) return; // In home base, handled by static layout or separate logic if needed
+        for(let key in piecesObj) {
+            const piece = piecesObj[key];
+            if(piece.pos === 'home') continue; // Tokens in home base are handled by static UI or omitted for now
 
-                // Calculate coordinates from server logic (simplified mapping needed)
-                // Since server sends index 0-56, we need a client-side map to Row/Col
-                const coord = getPathCoord(color, posIndex);
-                if(!coord) return;
+            const coord = getPathCoord(piece.color, piece.pos);
+            if(!coord) continue;
 
-                const cell = document.querySelector(`.cell[data-row="${coord[0]}"][data-col="${coord[1]}"]`);
-                if(cell) {
-                    const token = document.createElement('div');
-                    token.className = `token token-${color}`;
-                    token.dataset.color = color;
-                    token.dataset.index = tokenIdx;
-                    token.onclick = () => attemptMove(tokenIdx);
-                    cell.appendChild(token);
-                }
-            });
+            const cell = document.querySelector(`.cell[data-row="${coord[0]}"][data-col="${coord[1]}"]`);
+            if(cell) {
+                const token = document.createElement('div');
+                token.className = `token token-${piece.color}`;
+                token.dataset.color = piece.color;
+                token.dataset.id = key;
+                token.onclick = () => attemptMove(key);
+                cell.appendChild(token);
+            }
         }
     }
 
-    // --- Coordinate Mapping (Client side mirrors server for rendering) ---
-    const PATH_MAP = { red: [], green: [], yellow: [], blue: [] };
-    const MAIN_PATH = [
-        [6,1],[6,2],[6,3],[6,4],[6,5],[5,6],[4,6],[3,6],[2,6],[1,6],[0,6],
-        [0,7],[0,8],[1,8],[2,8],[3,8],[4,8],[5,8],[6,9],[6,10],[6,11],[6,12],[6,13],
-        [7,14],[8,14],[8,13],[8,12],[8,11],[8,10],[8,9],[9,8],[10,8],[11,8],[12,8],[13,8],[14,8],
-        [14,7],[14,6],[13,6],[12,6],[11,6],[10,6],[9,6],[8,5],[8,4],[8,3],[8,2],[8,1],
-        [7,0],[6,0]
-    ];
-    
-    function initPaths() {
-        // Red
-        PATH_MAP.red = [...MAIN_PATH, [[7,1],[7,2],[7,3],[7,4],[7,5],[7,6]]].flat();
-        // Green (Starts at index 13 of main path relative to Red)
-        const gStart = MAIN_PATH.slice(13).concat(MAIN_PATH.slice(0,13));
-        PATH_MAP.green = [...gStart, [[1,7],[2,7],[3,7],[4,7],[5,7],[6,7]]].flat();
-        // Yellow
-        const yStart = MAIN_PATH.slice(26).concat(MAIN_PATH.slice(0,26));
-        PATH_MAP.yellow = [...yStart, [[7,13],[7,12],[7,11],[7,10],[7,9],[7,8]]].flat();
-        // Blue
-        const bStart = MAIN_PATH.slice(39).concat(MAIN_PATH.slice(0,39));
-        PATH_MAP.blue = [...bStart, [[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]]].flat();
-        
-        // Fix center coordinates for simplicity
-        // Home stretch ends
-        PATH_MAP.red[56] = [7,7]; 
-        PATH_MAP.green[56] = [7,7];
-        PATH_MAP.yellow[56] = [7,7];
-        PATH_MAP.blue[56] = [7,7];
-    }
-    initPaths();
-
-    function getPathCoord(color, index) {
-        if(index < 0) return null; // Home base
-        // Map internal index to path
-        // Red 0-50 is main, 51-56 is home
-        // But our MAIN_PATH is 0-51 (loop). 
-        // Let's adjust the paths logic to match server exactly.
-        return PATH_MAP[color][index] || null;
+    function getPathCoord(color, pos) {
+        if(pos === 'finished') return PATH_MAP[color][57];
+        if(typeof pos === 'number') return PATH_MAP[color][pos];
+        return null;
     }
 
     function updateTurnUI(turnColor, diceVal) {
-        const rows = document.querySelectorAll('.player-row');
-        rows.forEach(r => r.classList.remove('active-turn'));
-        if(turnColor) document.getElementById(`p-${turnColor}`).classList.add('active-turn');
+        document.querySelectorAll('.player-row').forEach(r => r.classList.remove('active-turn'));
+        if(turnColor && document.getElementById(`p-${turnColor}`)) {
+            document.getElementById(`p-${turnColor}`).classList.add('active-turn');
+        }
         
         document.getElementById('turnIndicator').innerText = turnColor ? turnColor.toUpperCase() : '—';
         
-        const me = currentGameState.players?.find(p => p.id === socket.id);
         const diceEl = document.getElementById('dice');
-        if(me && me.color === turnColor) {
-            diceEl.classList.remove('disabled');
+        
+        if(currentGameState.active && myColor === turnColor) {
+            if(!diceVal) {
+                diceEl.classList.remove('disabled');
+            } else {
+                highlightMoves(myColor, diceVal);
+                diceEl.classList.add('disabled');
+            }
         } else {
             diceEl.classList.add('disabled');
         }
+        
         if(diceVal) setDice(diceVal);
+        else setDice(0);
     }
 
     function setDice(val) {
         const d = document.getElementById('dice');
         d.classList.remove('rolling');
-        void d.offsetWidth; // Trigger reflow
+        void d.offsetWidth;
         d.classList.add('rolling');
         
+        d.querySelectorAll('.dot').forEach(dot => dot.classList.remove('on'));
         setTimeout(() => {
             const patterns = {
                 1: [4], 2: [0,8], 3: [0,4,8], 4: [0,2,6,8], 5: [0,2,4,6,8], 6: [0,2,3,5,6,8]
             };
-            d.querySelectorAll('.dot').forEach(dot => dot.classList.remove('on'));
             if(patterns[val]) patterns[val].forEach(i => d.children[i].classList.add('on'));
-            document.getElementById('diceResult').innerText = `Rolled: ${val}`;
+            document.getElementById('diceResult').innerText = val > 0 ? `Rolled: ${val}` : '';
         }, 300);
     }
 
     function requestRoll() {
-        socket.emit('roll-dice');
+        if(currentGameState.turn === myColor && !currentGameState.dice) {
+            socket.emit('roll-dice');
+        }
     }
 
     function highlightMoves(color, dice) {
-        // Clear previous
         document.querySelectorAll('.token.highlight').forEach(t => t.classList.remove('highlight'));
         
-        const state = currentGameState.state[color];
-        state.forEach((pos, idx) => {
-            // Simple logic: if can move, highlight
-            // If home (-1) and dice 6 -> can move
-            if(pos === -1 && dice === 6) {
-                const tok = document.querySelector(`.token-${color}[data-index="${idx}"]`);
-                if(tok) tok.classList.add('highlight');
+        const pieces = currentGameState.pieces;
+        
+        for(let key in pieces) {
+            if(pieces[key].color === color) {
+                const p = pieces[key];
+                // Logic: Can this piece move?
+                if(p.pos === 'home' && dice === 6) {
+                     const tok = document.querySelector(`.token[data-id="${key}"]`);
+                     // Need to render home tokens or assume they exist?
+                     // For simplicity, if in home, we show a visual prompt or just allow click on home base.
+                     // Here we just highlight if it's on board.
+                     if(tok) tok.classList.add('highlight');
+                } 
+                else if (p.pos !== 'home' && p.pos !== 'finished') {
+                     const tok = document.querySelector(`.token[data-id="${key}"]`);
+                     if(tok) tok.classList.add('highlight');
+                }
             }
-            // If on board -> can move (simplified for UI)
-            else if (pos > -1) {
-                const tok = document.querySelector(`.token-${color}[data-index="${idx}"]`);
-                if(tok) tok.classList.add('highlight');
-            }
-        });
+        }
     }
 
-    function attemptMove(tokenIndex) {
-        // Only emit if it is my turn (checked by highlight class presence mostly)
-        const me = currentGameState.players.find(p => p.id === socket.id);
-        if(me && me.color === currentGameState.turn) {
-            socket.emit('move-token', { tokenIndex });
+    function attemptMove(tokenId) {
+        const el = document.querySelector(`.token[data-id="${tokenId}"]`);
+        if(el && el.classList.contains('highlight')) {
+            socket.emit('move-token', { tokenId });
         }
     }
   </script>
