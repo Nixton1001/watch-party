@@ -90,10 +90,7 @@ io.on('connection', (socket) => {
     const party = parties[data.roomId];
     if (!party) return socket.emit('error', 'Party not found');
     
-    if (disconnectTimeouts[data.roomId]) {
-        clearTimeout(disconnectTimeouts[data.roomId]);
-        delete disconnectTimeouts[data.roomId];
-    }
+    if (disconnectTimeouts[socket.id]) clearTimeout(disconnectTimeouts[socket.id]);
 
     const isReconnectingHost = party.hostUID === data.uid;
     if (isReconnectingHost) party.hostSocketId = socket.id;
@@ -131,26 +128,24 @@ io.on('connection', (socket) => {
   socket.on('send-state', (data) => { io.to(data.to).emit('sync-video', { type: data.playing ? 'play' : 'pause', time: data.time }); });
 
   // ==========================================
-  // --- VOICE SYSTEM (PeerJS Updated) ---
+  // --- VOICE SYSTEM (PeerJS) ---
   // ==========================================
   socket.on('join-voice', (data) => {
     if (!voiceRooms[data.roomId]) voiceRooms[data.roomId] = [];
     const existing = voiceRooms[data.roomId].find(u => u.id === socket.id);
     if (!existing) {
-      // STORE PEER ID (Critical for PeerJS)
       voiceRooms[data.roomId].push({ id: socket.id, name: data.name, peerId: data.peerId });
     } else {
-      existing.peerId = data.peerId; // Update if rejoining
+      existing.peerId = data.peerId; 
     }
-    
-    // Send list of existing users (with peerIds) to requester
     const existingUsers = voiceRooms[data.roomId].filter(u => u.id !== socket.id);
     socket.emit('voice-users-list', existingUsers);
-    
-    // Notify others (send peerId)
     socket.to(data.roomId).emit('voice-user-joined', { id: socket.id, name: data.name, peerId: data.peerId });
   });
 
+  // ==========================================
+  // --- DISCONNECT HANDLER ---
+  // ==========================================
   socket.on('disconnect', () => {
     // Voice Cleanup
     for (let roomId in voiceRooms) {
@@ -160,14 +155,15 @@ io.on('connection', (socket) => {
       if (voiceRooms[roomId].length === 0) delete voiceRooms[roomId];
     }
     
-    // Party Cleanup (Grace Period)
+    // Party Cleanup
     if (socket.partyCode && parties[socket.partyCode]) {
       const party = parties[socket.partyCode];
       const leavingName = party.names && party.names[socket.id] || 'Someone';
       socket.to(socket.partyCode).emit('user-left-msg', { id: socket.id, name: leavingName });
       socket.to(socket.partyCode).emit('user-disconnected', { id: socket.id });
-
-      disconnectTimeouts[socket.partyCode] = setTimeout(() => {
+      
+      // Grace period
+      disconnectTimeouts[socket.id] = setTimeout(() => {
         if (parties[socket.partyCode]) {
              const p = parties[socket.partyCode];
              p.users = p.users.filter(id => id !== socket.id);
@@ -175,10 +171,10 @@ io.on('connection', (socket) => {
              if (p.hostSocketId === socket.id) p.hostSocketId = null;
              if (p.users.length === 0) delete parties[socket.partyCode];
         }
-      }, 10000);
+      }, 5000);
     }
     
-    // Game Cleanup (Tic Tac Toe)
+    // Game Cleanup
     if (socket.gameRoomId && gameRooms[socket.gameRoomId]) { delete gameRooms[socket.gameRoomId]; io.to(socket.gameRoomId).emit('game-error', 'Opponent Disconnected'); }
     
     // Draw Cleanup
@@ -195,17 +191,14 @@ io.on('connection', (socket) => {
     
     // Ludo Cleanup
     if (socket.ludoRoom && ludoRooms[socket.ludoRoom]) {
-        const room = ludoRooms[socket.ludoRoom];
-        for(let color of ludoColors) { if(room.players[color] && room.players[color].id === socket.id) room.players[color] = null; }
-        io.to(socket.ludoRoom).emit('ludo-error', 'A player disconnected.'); delete ludoRooms[socket.ludoRoom];
+        io.to(socket.ludoRoom).emit('ludo-error', 'A player disconnected.');
+        delete ludoRooms[socket.ludoRoom];
     }
   });
 
   // ==========================================
-  // --- GAMES LOGIC (Unchanged) ---
+  // --- TIC TAC TOE ---
   // ==========================================
-  
-  // TIC TAC TOE
   socket.on('join-game-room', (data) => {
     const { roomId, name } = data;
     if (!gameRooms[roomId]) gameRooms[roomId] = { players: [], board: Array(9).fill(null), turn: 'X', finished: false, restartRequests: new Set() };
@@ -224,8 +217,7 @@ io.on('connection', (socket) => {
     if (!player || game.turn !== player.symbol || game.board[data.index]) return;
     game.board[data.index] = player.symbol;
     const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
-    let winner = null;
-    let winLine = null;
+    let winner = null; let winLine = null;
     for(let w of wins) { const [a,b,c] = w; if(game.board[a] && game.board[a] === game.board[b] && game.board[a] === game.board[c]) { winner = game.board[a]; winLine = w; break; } }
     if (winner) {
       const winnerPlayer = game.players.find(p => p.symbol === winner); if(winnerPlayer) winnerPlayer.score += 50;
@@ -241,8 +233,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('request-restart', ({ roomId }) => {
-    const game = gameRooms[roomId];
-    if (!game || !game.finished) return;
+    const game = gameRooms[roomId]; if (!game || !game.finished) return;
     game.restartRequests.add(socket.id);
     socket.to(roomId).emit('restart-requested');
     if (game.restartRequests.size === 2) {
@@ -251,7 +242,9 @@ io.on('connection', (socket) => {
     }
   });
 
-  // THINK & DRAW
+  // ==========================================
+  // --- THINK & DRAW ---
+  // ==========================================
   function startDrawRound(roomId) {
     const room = drawRooms[roomId]; if (!room) return;
     room.status = 'choosing'; room.boardData = []; room.guessedPlayers = [];
@@ -304,59 +297,163 @@ io.on('connection', (socket) => {
     } else { let isClose = false; if(word.includes(guess) || guess.includes(word)) isClose = true; io.to(socket.drawRoomId).emit('draw-chat', { name: data.name, msg: data.guess, system: false, close: isClose }); }
   });
 
-  // LUDO
+  // ==========================================
+  // --- GAME: LUDO (Server Authoritative) ---
+  // ==========================================
   const ludoColors = ['red', 'green', 'yellow', 'blue'];
+  
+  // Helper to get absolute position on 0-51 main track
+  function getAbsPos(color, pos) {
+    if (pos === 'home' || pos === 'finished') return -1;
+    const offsets = { red: 0, green: 13, yellow: 26, blue: 39 };
+    if (pos > 50) return -1; // In home stretch, safe
+    return (pos + offsets[color]) % 52;
+  }
+
   socket.on('join-ludo', (data) => {
     const { roomId, name, uid } = data;
     if (!ludoRooms[roomId]) {
-      ludoRooms[roomId] = { players: { red: null, green: null, yellow: null, blue: null }, pieces: {}, turn: 'red', active: false };
-      ludoColors.forEach(c => { for(let i=0; i<4; i++) ludoRooms[roomId].pieces[`${c}-${i}`] = { color: c, pos: 'home' }; });
+      ludoRooms[roomId] = { 
+        players: { red: null, green: null, yellow: null, blue: null }, 
+        pieces: {}, 
+        turn: 'red', 
+        active: false, 
+        dice: 0,
+        consecutiveSixes: 0
+      };
+      // Initialize pieces
+      ludoColors.forEach(c => { for(let i=0; i<4; i++) ludoRooms[roomId].pieces[`${c}-${i}`] = { color: c, pos: 'home', id: `${c}-${i}` }; });
     }
     const room = ludoRooms[roomId];
     let assignedColor = null;
+
+    // Reconnection logic
     for (let color of ludoColors) { if (room.players[color] && room.players[color].uid === uid) { room.players[color].id = socket.id; assignedColor = color; break; } }
+    // New join logic
     if (!assignedColor) { for (let color of ludoColors) { if (room.players[color] === null) { room.players[color] = { id: socket.id, name, uid }; assignedColor = color; break; } } }
+    
     if (!assignedColor) return socket.emit('ludo-error', 'Game Full');
-    socket.join(roomId); socket.ludoRoom = roomId;
+    
+    socket.join(roomId); 
+    socket.ludoRoom = roomId;
+    
     const playerCount = Object.values(room.players).filter(p => p !== null).length;
     if(playerCount >= 2) {
-        if(!room.active) { const firstAvailable = ludoColors.find(c => room.players[c]); room.turn = firstAvailable; }
-        room.active = true;
+        if(!room.active) { const firstAvailable = ludoColors.find(c => room.players[c]); room.turn = firstAvailable; room.active = true; }
         io.to(roomId).emit('ludo-state', room);
     } else {
         io.to(roomId).emit('ludo-waiting', { count: playerCount });
     }
   });
-  socket.on('ludo-roll', (data) => {
-    const room = ludoRooms[socket.ludoRoom]; if (!room || !room.active) return;
-    const player = room.players[room.turn]; if (!player || player.id !== socket.id) return;
-    room.dice = data.result;
+
+  socket.on('roll-dice', () => {
+    const room = ludoRooms[socket.ludoRoom]; 
+    if (!room || !room.active) return;
+    const player = room.players[room.turn]; 
+    if (!player || player.id !== socket.id) return;
+
+    // Server-side Dice Roll
+    const dice = Math.floor(Math.random() * 6) + 1;
+    room.dice = dice;
+
+    if (dice === 6) room.consecutiveSixes++;
+    else room.consecutiveSixes = 0;
+
+    // 3 consecutive sixes burn
+    if (room.consecutiveSixes === 3) {
+        room.dice = 0; 
+        room.consecutiveSixes = 0;
+        nextLudoTurn(room);
+        io.to(socket.ludoRoom).emit('ludo-update', room);
+        io.to(socket.ludoRoom).emit('ludo-toast', { msg: 'Three 6s! Turn burnt.', type: 'error' });
+        return;
+    }
+
     io.to(socket.ludoRoom).emit('ludo-update', room);
+    
+    // Check if moves are possible
+    if (!canMove(room, room.turn, dice)) {
+        setTimeout(() => {
+            io.to(socket.ludoRoom).emit('ludo-toast', { msg: 'No moves possible.', type: 'info' });
+            nextLudoTurn(room);
+            io.to(socket.ludoRoom).emit('ludo-update', room);
+        }, 1000);
+    }
   });
-  socket.on('ludo-move', (data) => {
-    const room = ludoRooms[socket.ludoRoom]; if (!room) return;
-    const piece = room.pieces[data.tokenId]; if (!piece || piece.color !== room.turn) return;
+
+  socket.on('move-token', (data) => {
+    const room = ludoRooms[socket.ludoRoom]; 
+    if (!room) return;
+    
+    const piece = room.pieces[data.tokenId]; 
+    if (!piece || piece.color !== room.turn) return;
     const dice = room.dice; 
-    if (piece.pos === 'home' && dice === 6) piece.pos = 0;
-    else if (piece.pos !== 'home') { piece.pos += dice; if (piece.pos > 57) piece.pos = 'finished'; }
-    if (dice !== 6) {
-        const currentIndex = ludoColors.indexOf(room.turn);
-        for(let i=1; i<=4; i++) {
-            const nextIndex = (currentIndex + i) % 4;
-            const nextColor = ludoColors[nextIndex];
-            if(room.players[nextColor]) { room.turn = nextColor; break; }
+    
+    // Move Logic
+    let moved = false;
+    if (piece.pos === 'home' && dice === 6) { piece.pos = 0; moved = true; }
+    else if (piece.pos !== 'home') {
+        let newPos = piece.pos + dice;
+        // Check if entering home stretch (simplified logic: path ends at 57)
+        if (newPos > 57) newPos = piece.pos; // Can't move exact, bounce back? Or just stay. Standard is need exact.
+        else { piece.pos = newPos; moved = true; }
+        
+        if (newPos === 57) piece.pos = 'finished';
+    }
+
+    if (moved) {
+        // Capture Logic
+        if (piece.pos !== 'finished' && piece.pos !== 'home') {
+            const myAbs = getAbsPos(piece.color, piece.pos);
+            const safeSpots = [0, 8, 13, 21, 26, 34, 39, 47]; // Stars and Starts
+            if (!safeSpots.includes(myAbs)) {
+                for (let key in room.pieces) {
+                    const p = room.pieces[key];
+                    if (p.color !== piece.color && p.pos !== 'home' && p.pos !== 'finished') {
+                        if (getAbsPos(p.color, p.pos) === myAbs) {
+                            p.pos = 'home'; // Captured!
+                            io.to(socket.ludoRoom).emit('ludo-toast', { msg: `${piece.color} captured ${p.color}!`, type: 'success' });
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Check Win
+        const finishedCount = Object.values(room.pieces).filter(p => p.color === piece.color && p.pos === 'finished').length;
+        if (finishedCount === 4) {
+            io.to(socket.ludoRoom).emit('ludo-winner', { name: room.players[piece.color].name, color: piece.color });
+            delete ludoRooms[socket.ludoRoom];
+            return;
         }
     }
+
+    // Turn Logic
+    if (dice !== 6 && moved) nextLudoTurn(room);
+    else if (!moved && dice !== 6) nextLudoTurn(room); // Should have been handled by canMove, but safety
+    
+    room.dice = 0; // Reset dice for next visual
     io.to(socket.ludoRoom).emit('ludo-update', room);
   });
-  socket.on('ludo-restart', (data) => {
-     const room = ludoRooms[socket.ludoRoom]; if(room) {
-         const firstAvailable = ludoColors.find(c => room.players[c]); room.turn = firstAvailable || 'red';
-         room.active = true; room.dice = 0;
-         ludoColors.forEach(c => { for(let i=0; i<4; i++) room.pieces[`${c}-${i}`] = { color: c, pos: 'home' }; });
-         io.to(socket.ludoRoom).emit('ludo-state', room);
-     }
-  });
+
+  function nextLudoTurn(room) {
+    const currentIndex = ludoColors.indexOf(room.turn);
+    for(let i=1; i<=4; i++) {
+        const nextIndex = (currentIndex + i) % 4;
+        const nextColor = ludoColors[nextIndex];
+        if(room.players[nextColor]) { room.turn = nextColor; break; }
+    }
+    room.consecutiveSixes = 0;
+  }
+
+  function canMove(room, color, dice) {
+    const myPieces = Object.values(room.pieces).filter(p => p.color === color);
+    if (dice === 6) return true; // Can always open with 6 if has pieces at home
+    for (let p of myPieces) {
+        if (p.pos !== 'home' && p.pos !== 'finished') return true;
+    }
+    return false;
+  }
 
 });
 
